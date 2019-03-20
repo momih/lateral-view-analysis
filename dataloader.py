@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import os
 
+
 class PCXRay(Dataset):
     def __init__(self, datadir, csvpath):
 
@@ -17,7 +18,7 @@ class PCXRay(Dataset):
         df = df.pivot(index='StudyID', columns='Projection', values=['ImageID', 'CXR_Label'])
         df.columns = ["_".join(x) for x in df.columns.to_flat_index()]
         self.data = df.drop(columns='CXR_Label_L').to_dict('index')
-        self.idx_to_study = {k:v for k,v in enumerate(self.data.keys())}
+        self.idx_to_study = {k: v for k, v in enumerate(self.data.keys())}
         
         labels = ['pneumonia', 'effusion', 'consolidation', 'no finding', 'cardiomegaly', 
                   'infiltration', 'emphysema', 'mass', 'hernia', 'atelectasis', 
@@ -31,7 +32,7 @@ class PCXRay(Dataset):
         study_data = self.data[self.idx_to_study[idx]]
         xrays = self._read_imgs(study_data)
         labels = study_data['CXR_Label_PA'].split("|")
-        labels =  self.mb.fit_transform([labels])
+        labels = self.mb.fit_transform([labels])
         return xrays, labels
     
     def _read_imgs(self, study):
@@ -41,4 +42,3 @@ class PCXRay(Dataset):
             img = np.array(Image.open(img_path))
             img_list.append(img)
         return np.stack(img_list)
-        
