@@ -4,6 +4,109 @@ import random
 import re
 
 
+labels_mapping = {
+    'calcified granuloma': ['calcified densities', 'granuloma'],
+    'calcified adenopathy': ['calcified densities', 'adenopathy', 'hilar enlargement'],
+    'calcified mediastinal adenopathy ': ['calcified densities'],
+    'calcified pleural thickening': ['calcified densities', 'pleural thickening'],
+    'calcified pleural plaques': ['calcified densities', 'pleural plaques'],
+    'heart valve calcified': ['calcified densities'],
+    'calcified fibroadenoma': ['calcified densities'],
+    'multiple nodules': ['nodule'],
+    'nipple shadow': ['pseudonodule'],
+    'end on vessel': ['end on vessel', 'pseudonodule'],
+    'interstitial pattern': ['infiltrates'],
+    'ground glass pattern': ['infiltrates'],
+    'reticular interstitial pattern ': ['infiltrates'],
+    'reticulonodular interstitial pattern': ['infiltrates'],
+    'miliary opacities': ['infiltrates'],
+    'alveolar pattern': ['infiltrates'],
+    'consolidation': ['consolidation', 'infiltrates'],
+    'air bronchogram': ['consolidation', 'infiltrates'],
+    'total atelectasis': ['atelectasis'],
+    'lobar atelectasis': ['atelectasis'],
+    'segmental atelectasis': ['atelectasis'],
+    'laminar atelectasis': ['atelectasis'],
+    'round atelectasis': ['atelectasis'],
+    'atelectasis basal': ['atelectasis'],
+    'minor fissure thickening': ['fissure thickening'],
+    'major fissure thickening': ['fissure thickening'],
+    'loculated fissural effusion': ['fissure thickening', 'pleural effusion'],
+    'apical pleural thickening': ['pleural thickening'],
+    'loculated pleural effusion': ['pleural effusion'],
+    'hydropneumothorax': ['pleural effusion', 'pneumothorax'],
+    'empyema': ['pleural effusion'],
+    'hemothorax': ['pleural effusion'],
+    'central vascular redistribution': ['vascular redistribution'],
+    'adenopathy': ['hilar enlargement'],
+    'vascular hilar enlargement': ['hilar enlargement'],
+    'pulmonary artery enlargement': ['hilar enlargement'],
+    'descendent aortic elongation': ['aortic elongation', 'mediastinal enlargement'],
+    'ascendent aortic elongation': ['aortic elongation', 'mediastinal enlargement'],
+    'aortic button enlargement': ['aortic elongation'],
+    'supra aortic elongation': ['aortic elongation', 'mediastinal enlargement'],
+    'superior mediastinal enlargement': ['mediastinal enlargement'],
+    'goiter': ['mediastinal enlargement'],
+    'aortic aneurysm': ['mediastinal enlargement'],
+    'mediastinal mass': ['mediastinal enlargement', 'mass'],
+    'hiatal hernia': ['mediastinal enlargement', 'hernia'],
+    'breast mass': ['mass'],
+    'pleural mass': ['mass'],
+    'pulmonary mass': ['mass'],
+    'soft tissue mass': ['mass'],
+    'scoliosis': ['thoracic cage deformation'],
+    'kyphosis': ['thoracic cage deformation'],
+    'pectum excavatum': ['thoracic cage deformation'],
+    'pectum carinatum': ['thoracic cage deformation'],
+    'cervical rib': ['thoracic cage deformation'],
+    'vertebral compression': ['vertebral degenerative changes'],
+    'vertebral anterior compression': ['vertebral degenerative changes'],
+    'blastic bone lesion': ['sclerotic bone lesion'],
+    'clavicle fracture': ['fracture'],
+    'humeral fracture': ['fracture'],
+    'vertebral fracture': ['fracture'],
+    'rib fracture': ['fracture'],
+    'callus rib fracture': ['fracture'],
+    'central venous catheter': ['catheter'],
+    'central venous catheter via subclavian vein': ['catheter'],
+    'central venous catheter via jugular vein': ['catheter'],
+    'reservoir central venous catheter': ['catheter'],
+    'central venous catheter via umbilical vein': ['catheter'],
+    'dual chamber device': ['electrical device'],
+    'single chamber device': ['electrical device'],
+    'pacemaker': ['electrical device'],
+    'dai': ['electrical device'],
+    'artificial mitral heart valve': ['artificial heart valve'],
+    'artificial aortic heart valve': ['artificial heart valve'],
+    'metal': ['surgery'],
+    'osteosynthesis material': ['surgery'],
+    'sternotomy': ['surgery'],
+    'suture material': ['surgery'],
+    'bone cement': ['surgery'],
+    'prosthesis': ['surgery'],
+    'humeral prosthesis': ['surgery'],
+    'mammary prosthesis': ['surgery'],
+    'endoprosthesis': ['surgery'],
+    'aortic endoprosthesis': ['surgery'],
+    'surgery breast': ['surgery'],
+    'mastectomy': ['surgery'],
+    'surgery neck': ['surgery'],
+    'surgery lung': ['surgery'],
+    'surgery heart': ['surgery'],
+    'surgery humeral': ['surgery'],
+    'atypical pneumonia': ['pneumonia'],
+    'tuberculosis sequelae': ['tuberculosis'],
+    'post radiotherapy changes': ['pulmonary fibrosis'],
+    'asbestosis signs': ['pulmonary fibrosis'],
+    'pulmonary artery hypertension': ['pulmonary hypertension'],
+    'pulmonary venous hypertension': ['pulmonary hypertension']
+}
+
+cxr_labels = ['pneumonia', 'pleural effusion', 'consolidation', 'normal', 'cardiomegaly',
+              'infiltrates', 'emphysema', 'mass', 'hernia', 'atelectasis',
+              'pneumothorax', 'pulmonary edema', 'pleural thickening', 'nodule', 'pulmonary fibrosis']
+
+
 def get_cohort(output):
     tqdm.pandas()
     random.seed(9999)
@@ -50,6 +153,25 @@ def get_cohort(output):
     good_labels = df.Labels.apply(remove_bad_labels)
     df = df.loc[good_labels]
 
+    # Map labels to the labels we care about
+    def convert_labels(x):
+        new_labels = [labels_mapping[label.strip()] if label.strip() in labels_mapping else [label.strip()]
+                      for label in eval(x)]
+        new_labels = [item for sublist in new_labels for item in sublist]  # flatten
+        new_labels = list(set(new_labels))  # remove duplicates
+
+        # Remove bad labels
+        if '' in new_labels:
+            new_labels.remove('')
+        if 'chronic changes' in new_labels:
+            new_labels.remove('chronic changes')
+        return new_labels
+
+    df['Clean_Labels'] = df.Labels.progress_apply(convert_labels)
+
+    # Removing images that don't have clean labels (typically, images with only 'chronic changes')
+    df = df.dropna(subset=['Clean_Labels'])
+
     df.to_csv(output, index=False)
 
     print("{0} images in cohort from {1} patients.".format(len(df), len(df.PatientID.unique())))
@@ -64,18 +186,27 @@ def labels_distribution(cohort):
     df = pd.read_csv(cohort, low_memory=False)
 
     labels_dict = {}
-    for labels in df.Labels:
+    for labels in df.Clean_Labels:
         for label in eval(labels):
             label = label.strip()
-            if label in ['', 'chronic changes']:
-                continue
             if label not in labels_dict:
                 labels_dict[label] = 0
             labels_dict[label] += 1
 
+    cxr_dict = {label: labels_dict[label] for label in cxr_labels}
+
+    print('---------------------------------------------------')
+
+    for k, v in sorted(cxr_dict.items(), key=lambda x: x[1], reverse=True):
+        print(k, v // 2)
+
+    print('---------------------------------------------------')
+
     for k, v in sorted(labels_dict.items(), key=lambda x: x[1], reverse=True):
-        if v > 500:
-            print(k, v)
+        if v > 100 and k not in cxr_labels:
+            print(k, v // 2)
+
+    print('---------------------------------------------------')
 
 
 if __name__ == '__main__':
