@@ -1,7 +1,11 @@
-from tqdm import tqdm
-import pandas as pd
 import random
 import re
+
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import pandas as pd
+import seaborn as sns
+from tqdm import tqdm
 
 
 labels_mapping = {
@@ -195,22 +199,50 @@ def labels_distribution(cohort):
 
     cxr_dict = {label: labels_dict[label] for label in cxr_labels}
 
+    labels_list = []
+    counts_list = []
+
     print('---------------------------------------------------')
 
     for k, v in sorted(cxr_dict.items(), key=lambda x: x[1], reverse=True):
         print(k, v // 2)
+        labels_list.append(k)
+        counts_list.append(v // 2)
 
     print('---------------------------------------------------')
 
     for k, v in sorted(labels_dict.items(), key=lambda x: x[1], reverse=True):
         if v > 100 and k not in cxr_labels:
             print(k, v // 2)
+            labels_list.append(k)
+            counts_list.append(v // 2)
 
     print('---------------------------------------------------')
+
+    sns.set(style="whitegrid")
+    fig, ax = plt.subplots(figsize=(10, 12))
+
+    sns.set_color_codes("muted")
+    clrs = [sns.xkcd_rgb["medium green"] if (x < len(cxr_labels)) else sns.xkcd_rgb["denim blue"]
+            for x in range(len(labels_list))]
+    g = sns.barplot(x=counts_list, y=labels_list, palette=clrs)
+
+    for index, row in enumerate(labels_list):
+        g.text(counts_list[index] * 1.05, index, counts_list[index], color='black', va="center", fontsize=9)
+
+    cxr_patch = mpatches.Patch(color=sns.xkcd_rgb["medium green"], label='CXR labels')
+    pc_patch = mpatches.Patch(color=sns.xkcd_rgb["denim blue"], label='New labels')
+    ax.legend(handles=[cxr_patch, pc_patch], ncol=2, loc="lower right", frameon=True)
+    ax.set(ylabel="", xlabel="Number of patients")
+    g.set_xscale('log')
+    ax.set_title('Labels distribution')
+    sns.despine(left=True, bottom=True)
+    plt.tight_layout()
+    plt.savefig('data/labels_distribution.png')
 
 
 if __name__ == '__main__':
     cohort_file = './data/cxr8_joint_cohort_data.csv'
 
-    get_cohort(cohort_file)
+    # get_cohort(cohort_file)
     labels_distribution(cohort_file)
