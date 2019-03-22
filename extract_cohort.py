@@ -111,14 +111,13 @@ cxr_labels = ['pneumonia', 'pleural effusion', 'consolidation', 'normal', 'cardi
               'pneumothorax', 'pulmonary edema', 'pleural thickening', 'nodule', 'pulmonary fibrosis']
 
 
-def get_cohort(output):
+def get_cohort(input_csv, output_csv):
     tqdm.pandas()
     random.seed(9999)
 
     usecols = ['ImageID', 'ImageDir', 'StudyDate_DICOM', 'StudyID', 'PatientID',
                'Projection', 'Pediatric', 'Rows_DICOM', 'Columns_DICOM', 'Labels']
-    df = pd.read_csv('./data/PADCHEST_chest_x_ray_images_labels_160K.csv', usecols=usecols,
-                     low_memory=False)
+    df = pd.read_csv(input_csv, usecols=usecols, low_memory=False)
 
     print("{0} images in dataset.".format(len(df)))
 
@@ -137,16 +136,6 @@ def get_cohort(output):
 
     df = df.loc[df.StudyID.isin(ids_to_keep)]
 
-    # Keeping only the first study for a patient
-    projs = df.groupby('PatientID').StudyDate_DICOM.progress_apply(lambda x: x.min())
-    ids_to_keep = df.apply(lambda x: x.StudyDate_DICOM == projs[x.PatientID], axis=1)
-    df = df.loc[ids_to_keep]
-
-    # Some patients had multiple studies done the same day, so we pick randomly among those
-    projs = df.groupby('PatientID').StudyID.progress_apply(lambda x: random.choice(x.tolist()))
-    ids_to_keep = df.apply(lambda x: x.StudyID == projs[x.PatientID], axis=1)
-    df = df.loc[ids_to_keep]
-
     # Removing images whose label is 'exclude' or 'suboptimal study'
     labels_to_remove = re.compile('exclude|suboptimal study|unchanged')
 
@@ -156,6 +145,16 @@ def get_cohort(output):
 
     good_labels = df.Labels.apply(remove_bad_labels)
     df = df.loc[good_labels]
+
+    # Keeping only the first study for a patient
+    projs = df.groupby('PatientID').StudyDate_DICOM.progress_apply(lambda x: x.min())
+    ids_to_keep = df.apply(lambda x: x.StudyDate_DICOM == projs[x.PatientID], axis=1)
+    df = df.loc[ids_to_keep]
+
+    # Some patients had multiple studies done the same day, so we pick randomly among those
+    projs = df.groupby('PatientID').StudyID.progress_apply(lambda x: random.choice(x.tolist()))
+    ids_to_keep = df.apply(lambda x: x.StudyID == projs[x.PatientID], axis=1)
+    df = df.loc[ids_to_keep]
 
     # Map labels to the labels we care about
     def convert_labels(x):
@@ -173,10 +172,17 @@ def get_cohort(output):
 
     df['Clean_Labels'] = df.Labels.progress_apply(convert_labels)
 
+    # Remove images with non-existent labels
+    def remove_bad_labels(x):
+        return x != []
+
+    good_labels = df.Clean_Labels.apply(remove_bad_labels)
+    df = df.loc[good_labels]
+
     # Removing images that don't have clean labels (typically, images with only 'chronic changes')
     df = df.dropna(subset=['Clean_Labels'])
 
-    df.to_csv(output, index=False)
+    df.to_csv(output_csv, index=False)
 
     print("{0} images in cohort from {1} patients.".format(len(df), len(df.PatientID.unique())))
     check_study_patient = (len(df.StudyID.unique()) == len(df.PatientID.unique()))
@@ -220,7 +226,7 @@ def labels_distribution(cohort):
     print('---------------------------------------------------')
 
     sns.set(style="whitegrid")
-    fig, ax = plt.subplots(figsize=(10, 12))
+    fig, ax = plt.subplots(figsize=(10, 13))
 
     sns.set_color_codes("muted")
     clrs = [sns.xkcd_rgb["medium green"] if (x < len(cxr_labels)) else sns.xkcd_rgb["denim blue"]
@@ -235,14 +241,15 @@ def labels_distribution(cohort):
     ax.legend(handles=[cxr_patch, pc_patch], ncol=2, loc="lower right", frameon=True)
     ax.set(ylabel="", xlabel="Number of patients")
     g.set_xscale('log')
-    ax.set_title('Labels distribution')
+    ax.set_title('Labels distribution for patients with both PA and L (N = {})'.format(len(df) // 2))
     sns.despine(left=True, bottom=True)
     plt.tight_layout()
     plt.savefig('data/labels_distribution.png')
 
 
 if __name__ == '__main__':
+    input_csv = './data/PADCHEST_chest_x_ray_images_labels_160K.csv'
     cohort_file = './data/cxr8_joint_cohort_data.csv'
 
-    # get_cohort(cohort_file)
+    get_cohort(input_csv, cohort_file)
     labels_distribution(cohort_file)
