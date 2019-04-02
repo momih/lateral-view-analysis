@@ -30,12 +30,10 @@ class PCXRay(Dataset):
 
         pa_path = subset[subset.Projection == 'PA'][['ImageID', 'ImageDir']]
         pa_path = join(self.datadir, str(int(pa_path['ImageDir'].tolist()[0])), pa_path['ImageID'].tolist()[0])
-        pa_path = './data/imgs/46523715740384360192496023767246369337_veyewt.png'  # TODO remove
         pa_img = np.array(Image.open(pa_path))
 
         l_path = subset[subset.Projection == 'L'][['ImageID', 'ImageDir']]
         l_path = join(self.datadir, str(int(l_path['ImageDir'].tolist()[0])), l_path['ImageID'].tolist()[0])
-        l_path = './data/imgs/46523715740384360192496023767246369337_veyewt.png'  # TODO remove
         l_img = np.array(Image.open(l_path))
 
         return {'PA': pa_img, 'L': l_img, 'labels': labels, 'encoded_labels': encoded_labels}
@@ -63,7 +61,7 @@ class PCXRay(Dataset):
 
 if __name__ == '__main__':
     cohort_file = './data/cxr8_joint_cohort_data.csv'
-    img_dir = './data/imgs'
+    img_dir = './data/preprocessed'
 
     dataset = PCXRay(img_dir, cohort_file)
 

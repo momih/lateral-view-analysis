@@ -1,3 +1,4 @@
+import argparse
 import random
 import re
 
@@ -111,7 +112,7 @@ cxr_labels = ['pneumonia', 'pleural effusion', 'consolidation', 'normal', 'cardi
               'pneumothorax', 'pulmonary edema', 'pleural thickening', 'nodule', 'pulmonary fibrosis']
 
 
-def get_cohort(input_csv, output_csv):
+def get_cohort(input_csv, output_csv, broken_images_file=None):
     tqdm.pandas()
     random.seed(9999)
 
@@ -120,6 +121,14 @@ def get_cohort(input_csv, output_csv):
     df = pd.read_csv(input_csv, usecols=usecols, low_memory=False)
 
     print("{0} images in dataset.".format(len(df)))
+
+    # Some pngs can't be read, we should remove them
+    if broken_images_file is not None:
+        with open(broken_images_file, 'r') as f:
+            broken_images = f.readlines()
+        broken_images = [im[:-1] for im in broken_images]
+
+        df = df.loc[~df.ImageID.isin(broken_images)]
 
     # Only keeping those images that are L or PA and removing pediatric patients
     df = df.loc[(df.Projection.isin(['L', 'PA'])) & (df.Pediatric == 'No')]
@@ -248,8 +257,11 @@ def labels_distribution(cohort):
 
 
 if __name__ == '__main__':
-    input_csv = './data/PADCHEST_chest_x_ray_images_labels_160K.csv'
-    cohort_file = './data/cxr8_joint_cohort_data.csv'
+    parser = argparse.ArgumentParser(description='Usage')
+    parser.add_argument('input_csv', type=str)
+    parser.add_argument('output_csv', type=str)
+    parser.add_argument('-b', type=str, default=None)
+    args = parser.parse_args()
 
-    get_cohort(input_csv, cohort_file)
-    labels_distribution(cohort_file)
+    get_cohort(args.input_csv, args.output_csv, args.b)
+    # labels_distribution(cohort_file)
