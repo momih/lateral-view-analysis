@@ -1,4 +1,5 @@
 import argparse
+from os.path import join, exists
 import random
 import re
 
@@ -112,13 +113,42 @@ cxr_labels = ['pneumonia', 'pleural effusion', 'consolidation', 'normal', 'cardi
               'pneumothorax', 'pulmonary edema', 'pleural thickening', 'nodule', 'pulmonary fibrosis']
 
 
-def get_cohort(input_csv, output_csv, broken_images_file=None):
+def correct_image_dir(input_csv, output_csv, datadir):
+    df = pd.read_csv(input_csv, low_memory=False)
+    print("{0} images in dataset.".format(len(df)))
+
+    # Some images don't exist
+    def correct_image_dir_if_required(x):
+        img_path = join(datadir, str(int(x['ImageDir'])), x['ImageID'])
+        if not exists(img_path):
+            x['ImageDir'] = -1
+            for i in range(54):
+                img_path = join(datadir, str(i), x['ImageID'])
+                if exists(img_path):
+                    x['ImageDir'] = i
+                    break
+        return x
+
+    df = df.progress_apply(correct_image_dir_if_required, axis=1)
+
+    def check_image_exists(x):
+        return int(x['ImageDir']) != -1
+    images_exist = df[['ImageID', 'ImageDir']].progress_apply(check_image_exists, axis=1)
+    print("{} images don't exist and were dropped.".format(sum(~images_exist)))
+    df = df.loc[images_exist]
+
+    df.to_csv(output_csv, index=False)
+
+
+def get_cohort(input_csv, output_csv, datadir, broken_images_file=None):
     tqdm.pandas()
     random.seed(9999)
 
+    correct_image_dir(input_csv, output_csv, datadir)
+
     usecols = ['ImageID', 'ImageDir', 'StudyDate_DICOM', 'StudyID', 'PatientID',
                'Projection', 'Pediatric', 'Rows_DICOM', 'Columns_DICOM', 'Labels']
-    df = pd.read_csv(input_csv, usecols=usecols, low_memory=False)
+    df = pd.read_csv(output_csv, usecols=usecols, low_memory=False)
 
     print("{0} images in dataset.".format(len(df)))
 
@@ -138,6 +168,14 @@ def get_cohort(input_csv, output_csv, broken_images_file=None):
 
     # Removing images that don't have labels
     df = df.dropna(subset=['Labels'])
+
+    # Some images don't exist
+    def check_image_exists(x):
+        img_path = join(datadir, str(int(x['ImageDir'])), x['ImageID'])
+        return exists(img_path)
+    images_exist = df[['ImageID', 'ImageDir']].progress_apply(check_image_exists, axis=1)
+    print("{} images don't exist and were dropped.".format(sum(~images_exist)))
+    df = df.loc[images_exist]
 
     # Keeping only those IDS that have both PA and L
     projs = df.groupby('StudyID').Projection.progress_apply(lambda x: ",".join(x))
@@ -260,8 +298,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Usage')
     parser.add_argument('input_csv', type=str)
     parser.add_argument('output_csv', type=str)
+    parser.add_argument('datadir', type=str)
     parser.add_argument('-b', type=str, default=None)
     args = parser.parse_args()
 
-    get_cohort(args.input_csv, args.output_csv, args.b)
+    get_cohort(args.input_csv, args.output_csv, args.datadir, args.b)
     # labels_distribution(cohort_file)

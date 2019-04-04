@@ -113,9 +113,9 @@ class Normalize(object):
     def __call__(self, sample):
         pa_img, l_img = sample['PA'], sample['L']
 
-        pa_img = 2 * (pa_img / pa_img.max()) - 1.
+        pa_img = 2 * (pa_img / 65536) - 1.
         pa_img = pa_img.astype(np.float32)
-        l_img = 2 * (l_img / l_img.max()) - 1.
+        l_img = 2 * (l_img / 65536) - 1.
         l_img = l_img.astype(np.float32)
 
         return {'PA': pa_img, 'L': l_img}
