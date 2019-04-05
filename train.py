@@ -111,8 +111,10 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
             elif target is 'l':
                 input, label = data['L'].to(device), data['encoded_labels'].to(device)
             else:
-                # TODO
-                input, label = data['PA'].to(device), data['encoded_labels'].to(device)
+                pa, l, label = data['PA'].to(device), data['L'].to(device), data['encoded_labels'].to(device)
+                input = torch.zeros(pa.size(), requires_grad=False, dtype=pa.dtype).to(device)
+                input[:, 0] = pa[:, 0]
+                input[:, 1] = l[:, 0]
 
             # Forward
             output = model(input)[-1]
@@ -147,8 +149,10 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
             elif target is 'l':
                 input, label = data['L'].to(device), data['encoded_labels'].to(device)
             else:
-                # TODO
-                input, label = data['PA'].to(device), data['encoded_labels'].to(device)
+                pa, l, label = data['PA'].to(device), data['L'].to(device), data['encoded_labels'].to(device)
+                input = torch.zeros(pa.size(), requires_grad=False, dtype=pa.dtype).to(device)
+                input[:, 0] = pa[:, 0]
+                input[:, 1] = l[:, 0]
 
             # Forward
             output = model(input)[-1]
