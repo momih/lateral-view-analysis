@@ -1,12 +1,10 @@
 from torch.utils.data import Dataset
-from torchvision import transforms
 from sklearn.preprocessing import MultiLabelBinarizer
 import torch
 
 from PIL import Image
 import numpy as np
 import pandas as pd
-import os
 from os.path import join
 import pickle
 
@@ -27,13 +25,14 @@ def split_dataset(csvpath, output, train=0.6, val=0.2):
 
 
 class PCXRayDataset(Dataset):
-    def __init__(self, datadir, csvpath, splitpath, transform=None, dataset='train'):
+    def __init__(self, datadir, csvpath, splitpath, transform=None, dataset='train', pretrained=False):
         super(PCXRayDataset, self).__init__()
 
         assert dataset in ['train', 'val', 'test']
 
         self.datadir = datadir
         self.transform = transform
+        self.pretrained = pretrained
 
         self.df = pd.read_csv(csvpath)
 
@@ -44,9 +43,9 @@ class PCXRayDataset(Dataset):
         # Split into train or validation
         with open(splitpath, 'rb') as f:
             train_ids, val_ids, test_ids = pickle.load(f)
-        if dataset is 'train':
+        if dataset == 'train':
             self.df = self.df[self.df.PatientID.isin(train_ids)]
-        elif dataset is 'val':
+        elif dataset == 'val':
             self.df = self.df[self.df.PatientID.isin(val_ids)]
         else:
             self.df = self.df[self.df.PatientID.isin(test_ids)]
@@ -66,13 +65,15 @@ class PCXRayDataset(Dataset):
         pa_path = join(self.datadir, str(int(pa_path['ImageDir'].tolist()[0])), pa_path['ImageID'].tolist()[0])
         # pa_path = './data/processed/0/46523715740384360192496023767246369337_veyewt.png'
         pa_img = np.array(Image.open(pa_path))[np.newaxis]
-        pa_img = np.repeat(pa_img, 3, axis=0)
+        if self.pretrained:
+            pa_img = np.repeat(pa_img, 3, axis=0)
 
         l_path = subset[subset.Projection == 'L'][['ImageID', 'ImageDir']]
         l_path = join(self.datadir, str(int(l_path['ImageDir'].tolist()[0])), l_path['ImageID'].tolist()[0])
         # l_path = './data/processed/0/46523715740384360192496023767246369337_veyewt.png'
         l_img = np.array(Image.open(l_path))[np.newaxis]
-        l_img = np.repeat(l_img, 3, axis=0)
+        if self.pretrained:
+            l_img = np.repeat(l_img, 3, axis=0)
 
         sample = {'PA': pa_img, 'L': l_img}
 
