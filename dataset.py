@@ -103,6 +103,8 @@ class PCXRayDataset(Dataset):
 
         self.labels = labels
         self.labels_count = labels_count
+        self.labels_weights = np.array([(sum(labels_count) - label) / sum(labels_count) for label in labels_count],
+                                       dtype=np.float32)
         self.nb_labels = len(self.labels)
 
 

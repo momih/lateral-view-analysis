@@ -14,7 +14,7 @@ from torch import nn
 from torchvision.transforms import Compose
 
 from dataset import PCXRayDataset, Normalize, ToTensor, split_dataset
-from densenet import DenseNetWithClassif, add_dropout
+from densenet import DenseNet, add_dropout
 
 
 torch.manual_seed(42)
@@ -25,11 +25,17 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
           dropout=True, pretrained=False):
     assert target in ['pa', 'l', 'joint']
 
+    print("Training mode: {}".format(target))
+
     if not exists(output_dir):
         os.makedirs(output_dir)
 
     if not exists(splits_path):
         split_dataset(csv_path, splits_path)
+
+    # Find device
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print('Device that will be used is: {0}'.format(device))
 
     # Load data
     preprocessing = Compose([Normalize(), ToTensor()])
@@ -48,13 +54,15 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
         in_channels = 3
     else:
         in_channels = 2 if target == 'joint' else 1
-    model = DenseNetWithClassif(out_features=trainset.nb_labels, pretrained=pretrained, in_channels=in_channels)
+    model = DenseNet(num_classes=trainset.nb_labels, in_channels=in_channels)
 
     # Add dropout
     if dropout:
         model = add_dropout(model, p=0.2)
 
-    criterion = nn.BCELoss(size_average=True)
+    # criterion = nn.BCELoss()
+    print(trainset.labels_weights)
+    criterion = nn.MultiLabelSoftMarginLoss(weight=torch.from_numpy(trainset.labels_weights).to(device))
 
     # Optimizer
     optimizer = Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
@@ -95,9 +103,6 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
         print("Resuming training at epoch {0}.".format(start_epoch))
         print("Weights loaded: {0}".format(weights_file))
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    print('Device that will be used is: {0}'.format(device))
-
     model.to(device)
 
     # Training loop
@@ -124,7 +129,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
                 input[:, 1] = l[:, 0]
 
             # Forward
-            output = model(input)[-1]
+            output = model(input)
             optimizer.zero_grad()
             loss = criterion(output, label)
 
@@ -163,7 +168,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
                 input[:, 1] = l[:, 0]
 
             # Forward
-            output = model(input)[-1]
+            output = model(input)
             running_loss += criterion(output, label).data
 
             # Accuracy
