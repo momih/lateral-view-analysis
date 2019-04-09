@@ -99,7 +99,7 @@ class PCXRayDataset(Dataset):
         labels = []
         labels_count = []
         for k, v in labels_dict.items():
-            if v > 100:
+            if v > 1000:
                 labels.append(k)
                 labels_count.append(v)
 
@@ -107,7 +107,7 @@ class PCXRayDataset(Dataset):
         self.labels_count = labels_count
         self.labels_weights = torch.from_numpy(np.array([(len(self) / label)
                                                          for label in labels_count], dtype=np.float32))
-        self.labels_weights = torch.clamp(self.labels_weights * 0.1, 1., 10.)
+        self.labels_weights = torch.clamp(self.labels_weights * 0.1, 1., 5.)
         self.nb_labels = len(self.labels)
 
 
