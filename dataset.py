@@ -26,7 +26,8 @@ def split_dataset(csvpath, output, train=0.6, val=0.2, seed=666):
 
 
 class PCXRayDataset(Dataset):
-    def __init__(self, datadir, csvpath, splitpath, transform=None, dataset='train', pretrained=False):
+    def __init__(self, datadir, csvpath, splitpath, transform=None, 
+                 dataset='train', pretrained=False, threshold=100):
         super(PCXRayDataset, self).__init__()
 
         assert dataset in ['train', 'val', 'test']
@@ -34,6 +35,7 @@ class PCXRayDataset(Dataset):
         self.datadir = datadir
         self.transform = transform
         self.pretrained = pretrained
+        self.threshold = threshold
 
         self.df = pd.read_csv(csvpath)
 
@@ -59,7 +61,11 @@ class PCXRayDataset(Dataset):
     def __getitem__(self, idx):
         subset = self.df[self.df.PatientID == self.df.PatientID[idx * 2]]
         labels = eval(subset.Clean_Labels.tolist()[0])
+        if set(labels).difference(self.labels):
+            labels.append('other')
         labels = [l for l in labels if l in self.labels]
+
+        
         encoded_labels = self.mb.transform([labels]).squeeze()
 
         pa_path = subset[subset.Projection == 'PA'][['ImageID', 'ImageDir']]
@@ -98,11 +104,17 @@ class PCXRayDataset(Dataset):
 
         labels = []
         labels_count = []
+        other_counts = []
         for k, v in labels_dict.items():
-            if v > 100:
+            if v > self.threshold:
                 labels.append(k)
                 labels_count.append(v)
-
+            else:
+                other_counts.append(v)
+                
+        labels.append('other')
+        labels_count.append(sum(other_counts))
+        
         self.labels = labels
         self.labels_count = labels_count
         self.labels_weights = torch.from_numpy(np.array([(len(self) / label)
