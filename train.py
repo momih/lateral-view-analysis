@@ -18,7 +18,6 @@ from densenet import DenseNet, add_dropout
 from hemis import Hemis, add_dropout_hemis
 
 from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_score
-import traceback
 import pandas as pd
 
 
@@ -31,7 +30,6 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     assert target in ['pa', 'l', 'joint']
 
     print("Training mode: {}".format(target))
-    metrics_df = pd.DataFrame(columns=['accuracy', 'auc', 'prc', 'loss', 'epoch', 'error'])
 
     if not exists(output_dir):
         os.makedirs(output_dir)
@@ -70,23 +68,22 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     if dropout:
         model = add_dropout(model, p=0.2) if target != 'joint' else add_dropout_hemis(model, p=0.2)
 
-    # criterion = nn.BCELoss()
     print(trainset.labels_weights)
-    # criterion = nn.MultiLabelSoftMarginLoss(weight=torch.from_numpy(trainset.labels_weights).to(device))
     # criterion = nn.MultiLabelSoftMarginLoss(reduction='none')
     criterion = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(device))
 
     # Optimizer
     optimizer = Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
 #    optimizer = SGD(model.parameters(), lr=learning_rate, weight_decay=1e-4)
-    scheduler = StepLR(optimizer, step_size=30, gamma=0.1)  # Used to decay learning rate
+    scheduler = StepLR(optimizer, step_size=10, gamma=0.1)  # Used to decay learning rate
 
     # Resume training if possible
     start_epoch = 0
     start_batch = 0
     train_loss = []
     val_loss = []
-    val_accuracy = []
+    val_preds_all = []
+    metrics_df = pd.DataFrame(columns=['accuracy', 'auc', 'prc', 'loss', 'epoch', 'error'])
     weights_files = glob(join(output_dir, '{}-e*.pt'.format(target)))  # Find all weights files
     if len(weights_files):
         # Find most recent epoch
@@ -107,18 +104,20 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
         with open(join(output_dir, '{}-train_loss.pkl'.format(target)), 'rb') as f:
             train_loss = pickle.load(f)
 
+        with open(join(output_dir, '{}-val_preds.pkl'.format(target)), 'rb') as f:
+            val_preds_all = pickle.load(f)
+
         with open(join(output_dir, '{}-val_loss.pkl'.format(target)), 'rb') as f:
             val_loss = pickle.load(f)
 
-        with open(join(output_dir, '{}-val_accuracy.pkl'.format(target)), 'rb') as f:
-            val_accuracy = pickle.load(f)
+        metrics_df = pd.read_csv(join(output_dir, '{}-metrics.csv'.format(target)),
+                                 usecols=['accuracy', 'auc', 'prc', 'loss', 'epoch', 'error'], low_memory=False)
 
         print("Resuming training at epoch {0}.".format(start_epoch))
         print("Weights loaded: {0}".format(weights_file))
 
     model.to(device)
-    
-    epoch_metrics = []
+
     # Training loop
     for epoch in range(start_epoch, nb_epoch):  # loop over the dataset multiple times
         scheduler.step()
@@ -138,7 +137,6 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
             else:
                 pa, l, label = data['PA'].to(device), data['L'].to(device), data['encoded_labels'].to(device)
                 input = torch.cat([pa, l], dim=1)
-
             # sample_weights = data['sample_weight'].to(device)
 
             # Forward
@@ -166,13 +164,9 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
 
         model.eval()
 
-        class_correct = torch.zeros(trainset.nb_labels, requires_grad=False, dtype=torch.float).to(device)
-        class_total = torch.zeros(trainset.nb_labels, requires_grad=False, dtype=torch.float).to(device)
         running_loss = torch.zeros(1, requires_grad=False, dtype=torch.float).to(device)
-        
         val_preds = []
         val_true = []
-        
         for i, data in enumerate(valloader, 0):
             if target == 'pa':
                 input, label = data['PA'].to(device), data['encoded_labels'].to(device)
@@ -181,7 +175,6 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
             else:
                 pa, l, label = data['PA'].to(device), data['L'].to(device), data['encoded_labels'].to(device)
                 input = torch.cat([pa, l], dim=1)
-
 
             # Forward
             output = model(input)
@@ -193,47 +186,27 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
             val_preds.append(output.data.cpu().numpy())
             val_true.append(label.data.cpu().numpy())
 
-            # Accuracy
-            c = (((output > 0.5).to(torch.int) + label.to(torch.int)) == 2).to(torch.float)
-            for j in range(trainset.nb_labels):
-                class_correct[j] += sum(c[:, j])
-                class_total[j] += sum(label[:, j])
-
         running_loss = running_loss.cpu().detach().numpy().squeeze() / (len(valset) / batch_size)
         val_loss.append(running_loss)
-        accuracy = class_correct / class_total
-        print(accuracy)
-        accuracy = accuracy.cpu().detach().numpy().squeeze()
-        val_accuracy.append(accuracy.tolist())
         print('Epoch {0} - Val loss = {1:.5f}'.format(epoch + 1, running_loss))
-        print('Epoch {0} - Val accuracy (avg) = {1:.5f}'.format(epoch + 1, accuracy.mean()))
 
         val_preds = np.vstack(val_preds)
         val_true = np.vstack(val_true)
-        metrics = {'loss': running_loss, 'epoch': epoch}
-            
-        try:
-            metrics = {'accuracy': accuracy_score(val_true, np.where(val_preds>0.5, 1, 0)),
-                       'auc': roc_auc_score(val_true, val_preds),
-                       'prc': average_precision_score(val_true, val_preds),
-                       'loss': running_loss, 'epoch': epoch}
-            metrics_df = metrics_df.append(metrics, ignore_index=True)
-            metrics_df.to_csv('./training_results.csv')
-        except Exception:
-            tb = traceback.format_exc()
-            metrics['error'] = tb
+        val_preds_all.append(val_preds)
+        metrics = {'accuracy': accuracy_score(val_true, np.where(val_preds > 0.5, 1, 0)),
+                   'auc': roc_auc_score(val_true, val_preds, average='weighted'),
+                   'prc': average_precision_score(val_true, val_preds, average='weighted'),
+                   'loss': running_loss, 'epoch': epoch}
+        metrics_df = metrics_df.append(metrics, ignore_index=True)
         print(metrics)
-        epoch_metrics.append(metrics)
 
-        
-        with open(join(output_dir, '{}-metrics.pkl'.format(target)), 'wb') as f:
-            pickle.dump(epoch_metrics, f)
+        with open(join(output_dir, '{}-val_preds.pkl'.format(target)), 'wb') as f:
+            pickle.dump(val_preds_all, f)
 
         with open(join(output_dir, '{}-val_loss.pkl'.format(target)), 'wb') as f:
             pickle.dump(val_loss, f)
 
-        with open(join(output_dir, '{}-val_accuracy.pkl'.format(target)), 'wb') as f:
-            pickle.dump(val_accuracy, f)
+        metrics_df.to_csv(join(output_dir, '{}-metrics.csv'.format(target)))
 
         torch.save(model.state_dict(), join(output_dir, '{}-e{}.pt'.format(target, epoch)))
 
