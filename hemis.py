@@ -58,20 +58,6 @@ def add_dropout_hemis(net, list_modules=['branches', 'combined'], p=0.1):
     net.classifier = add_dropout_rec(net.classifier, p=p)
     return net
 
-def checknan(module, input, output):
-    if torch.isnan(output).any():
-        import ipdb; ipdb.set_trace()
-#    if isinstance(module, nn.BatchNorm2d):
-#        for name, val in module._parameters.items():
-#            if torch.isnan(val).any():
-#                print(name)
-#                
-#        for name, val in module._buffers.items():
-#            if torch.isnan(val).any():
-#                print(name)
-            
-
-
 class Hemis(nn.Module):
     r"""Densenet-BC model class, based on
     `"Densely Connected Convolutional Networks" <https://arxiv.org/pdf/1608.06993.pdf>`_
@@ -165,8 +151,7 @@ class Hemis(nn.Module):
         stats = torch.mean(concatenated, dim=1)
         if views > 1:
             std = torch.var(concatenated, dim=1)
-            if torch.eq(torch.zeros_like(std), std).any():
-               std = torch.add(std, 1e-10)
+#            std = torch.add(std, 1e-10) # avoid NaN gradients
             stats = torch.cat([stats, std], dim=1)
            
         out = self.combined(stats)

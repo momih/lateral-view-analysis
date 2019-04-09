@@ -119,6 +119,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     model.to(device)
     
     epoch_metrics = []
+    epoch_val_preds = []
     # Training loop
     for epoch in range(start_epoch, nb_epoch):  # loop over the dataset multiple times
         scheduler.step()
@@ -210,6 +211,8 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
 
         val_preds = np.vstack(val_preds)
         val_true = np.vstack(val_true)
+        epoch_val_preds.append(val_preds)
+        
         metrics = {'loss': running_loss, 'epoch': epoch}
             
         try:
@@ -226,8 +229,8 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
         epoch_metrics.append(metrics)
 
         
-        with open(join(output_dir, '{}-metrics.pkl'.format(target)), 'wb') as f:
-            pickle.dump(epoch_metrics, f)
+        with open(join(output_dir, '{}-metricsandpreds.pkl'.format(target)), 'wb') as f:
+            pickle.dump([epoch_metrics, epoch_val_preds], f)
 
         with open(join(output_dir, '{}-val_loss.pkl'.format(target)), 'wb') as f:
             pickle.dump(val_loss, f)
