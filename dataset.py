@@ -9,8 +9,9 @@ from os.path import join
 import pickle
 
 
-def split_dataset(csvpath, output, train=0.6, val=0.2):
+def split_dataset(csvpath, output, train=0.6, val=0.2, seed=666):
     df = pd.read_csv(csvpath)
+    df = df.sample(frac=1, random_state=seed).reset_index(drop=True)
     patients_ids = df.PatientID.unique()
 
     train_val_split_idx = int(train * len(patients_ids))
@@ -82,6 +83,7 @@ class PCXRayDataset(Dataset):
 
         sample['labels'] = labels
         sample['encoded_labels'] = torch.from_numpy(encoded_labels.astype(np.float32))
+        sample['sample_weight'] = torch.max(sample['encoded_labels'] * self.labels_weights)
 
         return sample
 
@@ -103,8 +105,9 @@ class PCXRayDataset(Dataset):
 
         self.labels = labels
         self.labels_count = labels_count
-        self.labels_weights = np.array([(sum(labels_count) - label) / sum(labels_count) for label in labels_count],
-                                       dtype=np.float32)
+        self.labels_weights = torch.from_numpy(np.array([(len(self) / label)
+                                                         for label in labels_count], dtype=np.float32))
+        self.labels_weights = torch.clamp(self.labels_weights * 0.1, 1., 10.)
         self.nb_labels = len(self.labels)
 
 
@@ -140,3 +143,8 @@ if __name__ == '__main__':
     split_file = './models/data_split.pkl'
 
     split_dataset(cohort_file, split_file)
+    dataset = PCXRayDataset(img_dir, cohort_file, split_file)
+    print(dataset.labels_weights)
+    print(dataset.labels_count)
+    for i in range(100):
+        print(dataset[i]['sample_weight'])
