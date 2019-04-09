@@ -7,7 +7,7 @@ import pickle
 import numpy as np
 
 import torch
-from torch.optim import Adam
+from torch.optim import Adam, SGD
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torch import nn
@@ -62,11 +62,14 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
 
     # criterion = nn.BCELoss()
     print(trainset.labels_weights)
-    criterion = nn.MultiLabelSoftMarginLoss(weight=torch.from_numpy(trainset.labels_weights).to(device))
+    # criterion = nn.MultiLabelSoftMarginLoss(weight=torch.from_numpy(trainset.labels_weights).to(device))
+    # criterion = nn.MultiLabelSoftMarginLoss(reduction='none')
+    criterion = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(device))
 
     # Optimizer
-    optimizer = Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
-    scheduler = StepLR(optimizer, step_size=10, gamma=0.1)  # Used to decay learning rate
+    # optimizer = Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
+    optimizer = SGD(model.parameters(), lr=learning_rate, weight_decay=1e-4)
+    scheduler = StepLR(optimizer, step_size=30, gamma=0.1)  # Used to decay learning rate
 
     # Resume training if possible
     start_epoch = 0
@@ -127,11 +130,13 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
                                     dtype=pa.dtype).to(device)
                 input[:, 0] = pa[:, 0]
                 input[:, 1] = l[:, 0]
+            # sample_weights = data['sample_weight'].to(device)
 
             # Forward
             output = model(input)
             optimizer.zero_grad()
             loss = criterion(output, label)
+            # loss = (loss * sample_weights / sample_weights.sum()).sum()
 
             # Backward
             loss.backward()
@@ -169,7 +174,9 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
 
             # Forward
             output = model(input)
-            running_loss += criterion(output, label).data
+            running_loss += criterion(output, label).mean().data
+
+            output = torch.sigmoid(output)
 
             # Accuracy
             c = (((output > 0.5).to(torch.int) + label.to(torch.int)) == 2).to(torch.float)
@@ -209,7 +216,8 @@ if __name__ == "__main__":
     parser.add_argument('--target', type=str, default='pa')
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--pretrained', type=bool, default=False)
+    parser.add_argument('--learning_rate', type=float, default=0.0001)
     args = parser.parse_args()
 
     train(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
-          batch_size=args.batch_size, pretrained=args.pretrained)
+          batch_size=args.batch_size, pretrained=args.pretrained, learning_rate=args.learning_rate)
