@@ -83,6 +83,8 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     train_loss = []
     val_loss = []
     val_preds_all = []
+    val_auc = []
+    val_prc = []
     metrics_df = pd.DataFrame(columns=['accuracy', 'auc', 'prc', 'loss', 'epoch', 'error'])
     weights_files = glob(join(output_dir, '{}-e*.pt'.format(target)))  # Find all weights files
     if len(weights_files):
@@ -109,6 +111,12 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
 
         with open(join(output_dir, '{}-val_loss.pkl'.format(target)), 'rb') as f:
             val_loss = pickle.load(f)
+
+        with open(join(output_dir, '{}-val_auc.pkl'.format(target)), 'rb') as f:
+            val_auc = pickle.load(f)
+
+        with open(join(output_dir, '{}-val_prc.pkl'.format(target)), 'rb') as f:
+            val_prc = pickle.load(f)
 
         metrics_df = pd.read_csv(join(output_dir, '{}-metrics.csv'.format(target)),
                                  usecols=['accuracy', 'auc', 'prc', 'loss', 'epoch', 'error'], low_memory=False)
@@ -193,10 +201,20 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
         val_preds = np.vstack(val_preds)
         val_true = np.vstack(val_true)
         val_preds_all.append(val_preds)
+        auc = roc_auc_score(val_true, val_preds, average=None)
+        val_auc.append(auc)
+        print("auc")
+        print(auc)
+        print()
+        prc = average_precision_score(val_true, val_preds, average=None)
+        val_prc.append(prc)
+        print("prc")
+        print(prc)
+        print()
         metrics = {'accuracy': accuracy_score(val_true, np.where(val_preds > 0.5, 1, 0)),
                    'auc': roc_auc_score(val_true, val_preds, average='weighted'),
                    'prc': average_precision_score(val_true, val_preds, average='weighted'),
-                   'loss': running_loss, 'epoch': epoch}
+                   'loss': running_loss, 'epoch': epoch + 1}
         metrics_df = metrics_df.append(metrics, ignore_index=True)
         print(metrics)
 
@@ -205,6 +223,12 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
 
         with open(join(output_dir, '{}-val_loss.pkl'.format(target)), 'wb') as f:
             pickle.dump(val_loss, f)
+
+        with open(join(output_dir, '{}-val_auc.pkl'.format(target)), 'wb') as f:
+            pickle.dump(val_auc, f)
+
+        with open(join(output_dir, '{}-val_prc.pkl'.format(target)), 'wb') as f:
+            pickle.dump(val_prc, f)
 
         metrics_df.to_csv(join(output_dir, '{}-metrics.csv'.format(target)))
 
