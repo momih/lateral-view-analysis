@@ -99,7 +99,7 @@ class PCXRayDataset(Dataset):
         labels = []
         labels_count = []
         for k, v in labels_dict.items():
-            if v > 1000:
+            if v > 100:
                 labels.append(k)
                 labels_count.append(v)
 
