@@ -15,6 +15,11 @@ from torchvision.transforms import Compose
 
 from dataset import PCXRayDataset, Normalize, ToTensor, split_dataset
 from densenet import DenseNet, add_dropout
+from hemis import Hemis, add_dropout_hemis
+
+from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_score
+import traceback
+import pandas as pd
 
 
 torch.manual_seed(42)
@@ -26,6 +31,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     assert target in ['pa', 'l', 'joint']
 
     print("Training mode: {}".format(target))
+    metrics_df = pd.DataFrame(columns=['accuracy', 'auc', 'prc', 'loss', 'epoch', 'error'])
 
     if not exists(output_dir):
         os.makedirs(output_dir)
@@ -54,11 +60,15 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
         in_channels = 3
     else:
         in_channels = 2 if target == 'joint' else 1
-    model = DenseNet(num_classes=trainset.nb_labels, in_channels=in_channels)
+    
+    if target == 'joint':
+        model = Hemis(num_classes=trainset.nb_labels, in_channels=1)
+    else:
+        model = DenseNet(num_classes=trainset.nb_labels, in_channels=in_channels)
 
     # Add dropout
     if dropout:
-        model = add_dropout(model, p=0.2)
+        model = add_dropout(model, p=0.2) if target != 'joint' else add_dropout_hemis(model, p=0.2)
 
     # criterion = nn.BCELoss()
     print(trainset.labels_weights)
@@ -67,8 +77,8 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     criterion = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(device))
 
     # Optimizer
-    # optimizer = Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
-    optimizer = SGD(model.parameters(), lr=learning_rate, weight_decay=1e-4)
+    optimizer = Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
+#    optimizer = SGD(model.parameters(), lr=learning_rate, weight_decay=1e-4)
     scheduler = StepLR(optimizer, step_size=30, gamma=0.1)  # Used to decay learning rate
 
     # Resume training if possible
@@ -107,7 +117,8 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
         print("Weights loaded: {0}".format(weights_file))
 
     model.to(device)
-
+    
+    epoch_metrics = []
     # Training loop
     for epoch in range(start_epoch, nb_epoch):  # loop over the dataset multiple times
         scheduler.step()
@@ -126,10 +137,8 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
                 input, label = data['L'].to(device), data['encoded_labels'].to(device)
             else:
                 pa, l, label = data['PA'].to(device), data['L'].to(device), data['encoded_labels'].to(device)
-                input = torch.zeros((pa.size()[0], in_channels, pa.size()[2], pa.size()[3]), requires_grad=False,
-                                    dtype=pa.dtype).to(device)
-                input[:, 0] = pa[:, 0]
-                input[:, 1] = l[:, 0]
+                input = torch.cat([pa, l], dim=1)
+
             # sample_weights = data['sample_weight'].to(device)
 
             # Forward
@@ -160,6 +169,10 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
         class_correct = torch.zeros(trainset.nb_labels, requires_grad=False, dtype=torch.float).to(device)
         class_total = torch.zeros(trainset.nb_labels, requires_grad=False, dtype=torch.float).to(device)
         running_loss = torch.zeros(1, requires_grad=False, dtype=torch.float).to(device)
+        
+        val_preds = []
+        val_true = []
+        
         for i, data in enumerate(valloader, 0):
             if target == 'pa':
                 input, label = data['PA'].to(device), data['encoded_labels'].to(device)
@@ -167,16 +180,18 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
                 input, label = data['L'].to(device), data['encoded_labels'].to(device)
             else:
                 pa, l, label = data['PA'].to(device), data['L'].to(device), data['encoded_labels'].to(device)
-                input = torch.zeros((pa.size()[0], in_channels, pa.size()[2], pa.size()[3]), requires_grad=False,
-                                    dtype=pa.dtype).to(device)
-                input[:, 0] = pa[:, 0]
-                input[:, 1] = l[:, 0]
+                input = torch.cat([pa, l], dim=1)
+
 
             # Forward
             output = model(input)
             running_loss += criterion(output, label).mean().data
 
             output = torch.sigmoid(output)
+
+            # Save predictions
+            val_preds.append(output.data.cpu().numpy())
+            val_true.append(label.data.cpu().numpy())
 
             # Accuracy
             c = (((output > 0.5).to(torch.int) + label.to(torch.int)) == 2).to(torch.float)
@@ -193,11 +208,32 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
         print('Epoch {0} - Val loss = {1:.5f}'.format(epoch + 1, running_loss))
         print('Epoch {0} - Val accuracy (avg) = {1:.5f}'.format(epoch + 1, accuracy.mean()))
 
+        val_preds = np.vstack(val_preds)
+        val_true = np.vstack(val_true)
+        metrics = {'loss': running_loss, 'epoch': epoch}
+            
+        try:
+            metrics = {'accuracy': accuracy_score(val_true, np.where(val_preds>0.5, 1, 0)),
+                       'auc': roc_auc_score(val_true, val_preds),
+                       'prc': average_precision_score(val_true, val_preds),
+                       'loss': running_loss, 'epoch': epoch}
+            metrics_df = metrics_df.append(metrics, ignore_index=True)
+            metrics_df.to_csv('./training_results.csv')
+        except Exception:
+            tb = traceback.format_exc()
+            metrics['error'] = tb
+        print(metrics)
+        epoch_metrics.append(metrics)
+
+        
+        with open(join(output_dir, '{}-metrics.pkl'.format(target)), 'wb') as f:
+            pickle.dump(epoch_metrics, f)
+
         with open(join(output_dir, '{}-val_loss.pkl'.format(target)), 'wb') as f:
             pickle.dump(val_loss, f)
 
         with open(join(output_dir, '{}-val_accuracy.pkl'.format(target)), 'wb') as f:
-            pickle.dump(val_loss, f)
+            pickle.dump(val_accuracy, f)
 
         torch.save(model.state_dict(), join(output_dir, '{}-e{}.pt'.format(target, epoch)))
 
