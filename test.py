@@ -66,7 +66,7 @@ def test(data_dir, csv_path, splits_path, output_dir, weights_file,
 
     y_preds = []
     y_true = []
-    for i, data in enumerate(testloader, 0):
+    for data in testloader:
         if target == 'pa':
             input, label = data['PA'].to(device), data['encoded_labels'].to(device)
         elif target == 'l':
@@ -118,7 +118,7 @@ if __name__ == "__main__":
     parser.add_argument('--min_patients', type=int, default=50)
     args = parser.parse_args()
     print(args)
-    test(args.data_dir, args.csv_path, args.splits_path, args.output_dir, weights_file=args.weights_file,
-         target=args.target, batch_size=args.batch_size, 
-         pretrained=args.pretrained, learning_rate=args.learning_rate,
-          min_patients_per_label=args.min_patients)
+    test(args.data_dir, args.csv_path, args.splits_path, args.output_dir, 
+         weights_file=args.weights_file, target=args.target, 
+         batch_size=args.batch_size, pretrained=args.pretrained, 
+         min_patients_per_label=args.min_patients)
