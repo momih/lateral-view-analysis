@@ -44,16 +44,17 @@ class PCXRayDataset(Dataset):
         self.mb.fit(self.labels)
 
         # Split into train or validation
-        with open(splitpath, 'rb') as f:
-            train_ids, val_ids, test_ids = pickle.load(f)
-        if dataset == 'train':
-            self.df = self.df[self.df.PatientID.isin(train_ids)]
-        elif dataset == 'val':
-            self.df = self.df[self.df.PatientID.isin(val_ids)]
-        else:
-            self.df = self.df[self.df.PatientID.isin(test_ids)]
+        if splitpath is not None:
+            with open(splitpath, 'rb') as f:
+                train_ids, val_ids, test_ids = pickle.load(f)
+            if dataset == 'train':
+                self.df = self.df[self.df.PatientID.isin(train_ids)]
+            elif dataset == 'val':
+                self.df = self.df[self.df.PatientID.isin(val_ids)]
+            else:
+                self.df = self.df[self.df.PatientID.isin(test_ids)]
 
-        self.df = self.df.reset_index()
+            self.df = self.df.reset_index()
         
     def __len__(self):
         return len(self.df.PatientID.unique())
