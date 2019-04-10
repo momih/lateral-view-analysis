@@ -26,7 +26,7 @@ np.random.seed(42)
 
 
 def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100, learning_rate=1e-4, batch_size=1,
-          dropout=True, pretrained=False):
+          dropout=True, pretrained=False, min_patients_per_label=50):
     assert target in ['pa', 'l', 'joint']
 
     print("Training mode: {}".format(target))
@@ -43,11 +43,12 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
 
     # Load data
     preprocessing = Compose([Normalize(), ToTensor()])
-    trainset = PCXRayDataset(data_dir, csv_path, splits_path, transform=preprocessing, pretrained=pretrained)
+    trainset = PCXRayDataset(data_dir, csv_path, splits_path, transform=preprocessing, pretrained=pretrained,
+                             min_patients_per_label=min_patients_per_label)
     trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=2)
 
     valset = PCXRayDataset(data_dir, csv_path, splits_path, transform=preprocessing, dataset='val',
-                           pretrained=pretrained)
+                           pretrained=pretrained, min_patients_per_label=min_patients_per_label)
     valloader = DataLoader(valset, batch_size=batch_size, shuffle=True, num_workers=2)
 
     print("{0} patients in training set.".format(len(trainset)))
@@ -74,7 +75,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
 
     # Optimizer
     optimizer = Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
-#    optimizer = SGD(model.parameters(), lr=learning_rate, weight_decay=1e-4)
+    # optimizer = SGD(model.parameters(), lr=learning_rate, weight_decay=1e-4)
     scheduler = StepLR(optimizer, step_size=10, gamma=0.1)  # Used to decay learning rate
 
     # Resume training if possible
@@ -250,7 +251,9 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--pretrained', type=bool, default=False)
     parser.add_argument('--learning_rate', type=float, default=0.0001)
+    parser.add_argument('--min_patients', type=int, default=50)
     args = parser.parse_args()
 
     train(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
-          batch_size=args.batch_size, pretrained=args.pretrained, learning_rate=args.learning_rate)
+          batch_size=args.batch_size, pretrained=args.pretrained, learning_rate=args.learning_rate,
+          min_patients_per_label=args.min_patients)

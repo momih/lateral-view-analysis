@@ -26,8 +26,8 @@ def split_dataset(csvpath, output, train=0.6, val=0.2, seed=666):
 
 
 class PCXRayDataset(Dataset):
-    def __init__(self, datadir, csvpath, splitpath, transform=None, 
-                 dataset='train', pretrained=False, threshold=100):
+    def __init__(self, datadir, csvpath, splitpath, transform=None,
+                 dataset='train', pretrained=False, min_patients_per_label=50):
         super(PCXRayDataset, self).__init__()
 
         assert dataset in ['train', 'val', 'test']
@@ -35,7 +35,7 @@ class PCXRayDataset(Dataset):
         self.datadir = datadir
         self.transform = transform
         self.pretrained = pretrained
-        self.threshold = threshold
+        self.threshold = min_patients_per_label
 
         self.df = pd.read_csv(csvpath)
 
@@ -65,7 +65,6 @@ class PCXRayDataset(Dataset):
             labels.append('other')
         labels = [l for l in labels if l in self.labels]
 
-        
         encoded_labels = self.mb.transform([labels]).squeeze()
 
         pa_path = subset[subset.Projection == 'PA'][['ImageID', 'ImageDir']]
@@ -106,7 +105,7 @@ class PCXRayDataset(Dataset):
         labels_count = []
         other_counts = []
         for k, v in labels_dict.items():
-            if v > self.threshold:
+            if v > self.threshold * 2:
                 labels.append(k)
                 labels_count.append(v)
             else:
