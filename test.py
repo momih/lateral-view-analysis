@@ -24,6 +24,7 @@ def test(data_dir, csv_path, splits_path, output_dir, #weights_file,
          min_patients_per_label=100, seed=666):
     assert target in ['pa', 'l', 'joint']
     output_dir = output_dir.format(seed)
+    splits_path = splits_path.format(seed)
 
     print("Test mode: {}".format(target))
 
