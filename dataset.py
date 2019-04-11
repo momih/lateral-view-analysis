@@ -21,7 +21,7 @@ def split_dataset(csvpath, output, train=0.6, val=0.2, seed=666):
     val_ids = patients_ids[train_val_split_idx:val_test_split_idx]
     test_ids = patients_ids[val_test_split_idx:]
 
-    with open(output.format(seed), 'wb') as f:
+    with open(output, 'wb') as f:
         pickle.dump((train_ids, val_ids, test_ids), f)
 
 
