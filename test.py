@@ -127,6 +127,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
     test(args.data_dir, args.csv_path, args.splits_path, args.output_dir, 
-         weights_file=args.weights_file, target=args.target, 
+         target=args.target, 
          batch_size=args.batch_size, pretrained=args.pretrained, 
-         min_patients_per_label=args.min_patients)
+         min_patients_per_label=args.min_patients,  seed=args.seed)
