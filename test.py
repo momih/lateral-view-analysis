@@ -85,8 +85,8 @@ def test(data_dir, csv_path, splits_path, output_dir, weights_file,
     y_preds = np.vstack(y_preds)
     y_true = np.vstack(y_true)
     
-    np.save("{}_preds_{}".format(target,min_patients_per_label), y_preds)
-    np.save("{}_true_{}".format(target,min_patients_per_label), y_true)
+    np.save("{}_preds_{}".format(target, min_patients_per_label), y_preds)
+    np.save("{}_true_{}".format(target, min_patients_per_label), y_true)
 
     auc = roc_auc_score(y_true, y_preds, average=None)
     print("auc")

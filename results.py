@@ -23,13 +23,15 @@ def _load_per_label(results_dir, target, metric):
 
 
 def plot_metrics(results_dir):
+    epoch = 40
+
     pa_metrics = _load_metrics(results_dir, 'pa')
     l_metrics = _load_metrics(results_dir, 'l')
     joint_metrics = _load_metrics(results_dir, 'joint')
 
     sns.set(style="whitegrid")
 
-    x = np.arange(1, 101)
+    x = np.arange(1, epoch + 1)
     plt.plot(x, pa_metrics['accuracy'], label='PA')
     plt.plot(x, l_metrics['accuracy'], label='L')
     plt.plot(x, joint_metrics['accuracy'], label='PA+L')
@@ -40,7 +42,7 @@ def plot_metrics(results_dir):
     plt.savefig(join(results_dir, '_results_accuracy.png'))
     plt.close()
 
-    x = np.arange(1, 101)
+    x = np.arange(1, epoch + 1)
     plt.plot(x, pa_metrics['auc'], label='PA')
     plt.plot(x, l_metrics['auc'], label='L')
     plt.plot(x, joint_metrics['auc'], label='PA+L')
@@ -51,7 +53,7 @@ def plot_metrics(results_dir):
     plt.savefig(join(results_dir, '_results_auc.png'))
     plt.close()
 
-    x = np.arange(1, 101)
+    x = np.arange(1, epoch + 1)
     plt.plot(x, pa_metrics['prc'], label='PA')
     plt.plot(x, l_metrics['prc'], label='L')
     plt.plot(x, joint_metrics['prc'], label='PA+L')
@@ -64,7 +66,7 @@ def plot_metrics(results_dir):
 
 
 def plot_per_label(results_dir, labels_list):
-    epoch = 60
+    epoch = 40
 
     pa_prc = _load_per_label(results_dir, 'pa', 'prc')[epoch]
     l_prc = _load_per_label(results_dir, 'l', 'prc')[epoch]
@@ -110,7 +112,7 @@ def plot_per_label(results_dir, labels_list):
 
 
 def plot_per_label_diff(results_dir, labels_list):
-    epoch = 60
+    epoch = 40
 
     diff_map = {0: 'PA', 1: 'L', 2: 'PA+L', 3: 'Indifferent'}
     clr_map = {'PA': 'b', 'L': 'r', 'PA+L': 'g', 'Indifferent': 'm'}
@@ -195,14 +197,14 @@ def plot_per_label_diff(results_dir, labels_list):
 
 
 if __name__ == "__main__":
-    num_patients = 200
-    results_dir = './models/p{}lr'.format(num_patients)
+    num_patients = 100
+    results_dir = './models/s3'
     cohort_file = './data/joint_PA_L.csv'
     img_dir = './data/processed'
 
     dataset = PCXRayDataset(img_dir, cohort_file, None, min_patients_per_label=num_patients)
     labels_list = ['{} ({})'.format(l, c // 2) for l, c in zip(dataset.labels, dataset.labels_count)]
 
-    plot_metrics(results_dir)
+    # plot_metrics(results_dir)
     plot_per_label(results_dir, labels_list)
     plot_per_label_diff(results_dir, labels_list)
