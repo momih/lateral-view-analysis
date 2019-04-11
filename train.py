@@ -26,8 +26,10 @@ np.random.seed(42)
 
 
 def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100, learning_rate=1e-4, batch_size=1,
-          dropout=True, pretrained=False, min_patients_per_label=50):
+          dropout=True, pretrained=False, min_patients_per_label=50, seed=666):
     assert target in ['pa', 'l', 'joint']
+
+    output_dir = output_dir.format(seed)
 
     print("Training mode: {}".format(target))
 
@@ -35,7 +37,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
         os.makedirs(output_dir)
 
     if not exists(splits_path):
-        split_dataset(csv_path, splits_path)
+        split_dataset(csv_path, splits_path, seed=seed)
 
     # Find device
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -252,8 +254,9 @@ if __name__ == "__main__":
     parser.add_argument('--pretrained', type=bool, default=False)
     parser.add_argument('--learning_rate', type=float, default=0.0001)
     parser.add_argument('--min_patients', type=int, default=50)
+    parser.add_argument('--seed', type=int, default=666)
     args = parser.parse_args()
 
     train(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
           batch_size=args.batch_size, pretrained=args.pretrained, learning_rate=args.learning_rate,
-          min_patients_per_label=args.min_patients)
+          min_patients_per_label=args.min_patients, seed=args.seed)

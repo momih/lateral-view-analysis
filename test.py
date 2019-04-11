@@ -36,7 +36,7 @@ def test(data_dir, csv_path, splits_path, output_dir, weights_file,
     preprocessing = Compose([Normalize(), ToTensor()])
 
     testset = PCXRayDataset(data_dir, csv_path, splits_path, transform=preprocessing, dataset='test',
-                           pretrained=pretrained, min_patients_per_label=min_patients_per_label)
+                            pretrained=pretrained, min_patients_per_label=min_patients_per_label)
     testloader = DataLoader(testset, batch_size=batch_size, shuffle=True, num_workers=2)
 
     print("{0} patients in test set.".format(len(testset)))
@@ -55,7 +55,6 @@ def test(data_dir, csv_path, splits_path, output_dir, weights_file,
     # Add dropout
     if dropout:
         model = add_dropout(model, p=0.2) if target != 'joint' else add_dropout_hemis(model, p=0.2)
-
 
     # Load trained weights
     weights_file = join(output_dir, weights_file)

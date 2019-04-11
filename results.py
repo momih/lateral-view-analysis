@@ -196,13 +196,13 @@ def plot_per_label_diff(results_dir, labels_list):
 
 if __name__ == "__main__":
     num_patients = 200
-    results_dir = './models/p{}'.format(num_patients)
+    results_dir = './models/p{}lr'.format(num_patients)
     cohort_file = './data/joint_PA_L.csv'
     img_dir = './data/processed'
 
     dataset = PCXRayDataset(img_dir, cohort_file, None, min_patients_per_label=num_patients)
     labels_list = ['{} ({})'.format(l, c // 2) for l, c in zip(dataset.labels, dataset.labels_count)]
 
-    # plot_metrics(results_dir)
-    # plot_per_label(results_dir, dataset.labels)
+    plot_metrics(results_dir)
+    plot_per_label(results_dir, labels_list)
     plot_per_label_diff(results_dir, labels_list)
