@@ -30,6 +30,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     assert target in ['pa', 'l', 'joint']
 
     output_dir = output_dir.format(seed)
+    splits_path = splits_path.format(seed)
 
     print("Training mode: {}".format(target))
 
