@@ -61,7 +61,7 @@ def test(data_dir, csv_path, splits_path, output_dir, #weights_file,
     # Find best weights
     df_file = '{}-metrics.csv'.format(target)
     metricsdf = pd.read_csv(join(output_dir, df_file))
-    best_epoch = metricsdf.idxmax()['auc']
+    best_epoch = int(metricsdf.idxmax()['auc'])
     
     
     # Load trained weights
@@ -122,7 +122,7 @@ if __name__ == "__main__":
     parser.add_argument('--target', type=str, default='pa')
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--pretrained', type=bool, default=False)
-    parser.add_argument('--learning_rate', type=float, default=0.0001)
+    parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--min_patients', type=int, default=50)
     args = parser.parse_args()
     print(args)
