@@ -134,6 +134,8 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=50,
         model.train()
 
         running_loss = torch.zeros(1, requires_grad=False, dtype=torch.float).to(device)
+        train_preds = []
+        train_true = []
         for i, data in enumerate(trainloader, 0):
             # Skip to current batch
             if epoch == start_epoch and i < start_batch:
@@ -157,7 +159,11 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=50,
             # Backward
             loss.backward()
             optimizer.step()
-
+            
+            # Save predictions
+            train_preds.append(torch.sigmoid(output).data.cpu().numpy())
+            train_true.append(label.data.cpu().numpy())
+            
             # print statistics
             running_loss += loss.data
             print_every = max(1, len(trainset) // (20 * batch_size))
@@ -171,25 +177,6 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=50,
                 torch.save(model.state_dict(), join(output_dir, '{0}-e{1}-i{2}.pt'.format(target, epoch, i + 1)))
                 running_loss = torch.zeros(1, requires_grad=False).to(device)
             
-        # Evaluate training data
-        train_preds = []
-        train_true = []
-        for i, data in enumerate(trainloader, 0):
-            if target == 'pa':
-                input, label = data['PA'].to(device), data['encoded_labels'].to(device)
-            elif target == 'l':
-                input, label = data['L'].to(device), data['encoded_labels'].to(device)
-            else:
-                pa, l, label = data['PA'].to(device), data['L'].to(device), data['encoded_labels'].to(device)
-                input = [pa, l]
-
-            # Forward
-            output = model(input)
-            output = torch.sigmoid(output)
-
-            # Save predictions
-            train_preds.append(output.data.cpu().numpy())
-            train_true.append(label.data.cpu().numpy())
 
         train_preds = np.vstack(train_preds)
         train_true = np.vstack(train_true)
