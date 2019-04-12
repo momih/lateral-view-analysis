@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from collections import OrderedDict
+import numpy as np
 
 class _DenseLayer(nn.Sequential):
     def __init__(self, num_input_features, growth_rate, bn_size, drop_rate):
@@ -74,12 +75,15 @@ class Hemis(nn.Module):
 
     def __init__(self, growth_rate=32, block_config=(6, 12, 24, 16), merge_at=2, 
                  n_views=2, branch_names=None, num_init_features=64, bn_size=4, 
-                 drop_rate=0, num_classes=15, in_channels=1):
+                 drop_rate=0, num_classes=15, in_channels=1, 
+                 drop_view_prob=[0.5, 0.25, 0.25], concat=False):
 
         super(Hemis, self).__init__()
         separate = block_config[:merge_at]
         merged = block_config[merge_at:]
         self.branches = nn.ModuleDict()
+        self.drop_view_prob = drop_view_prob
+        self.concat = concat
         
         for view in range(n_views):
             name = 'branch_{}'.format(view)
@@ -134,28 +138,58 @@ class Hemis(nn.Module):
                 nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.Linear):
                 nn.init.constant_(m.bias, 0)
-
-    def forward(self, image):
+    
+    def _propagate_modalities(self, images):
+        # TODO branch should be called by name
         features = []
-        views = image.shape[1]
-        for idx in range(views): 
-            xray = image[:, idx].unsqueeze(1)
-            name = list(self.branches.keys())[idx]
+        branch_names = list(self.branches.keys())
+        
+        for idx, xray in enumerate(images): 
+            name = branch_names[idx]
             modal_features = self.branches[name](xray)
-            features.append(modal_features.unsqueeze(1))
+            features.append(modal_features)      
+        return features        
+
+    def forward(self, images):
+        # Propagate individual views through their branches
+        features = self._propagate_modalities(images)
+        stacked = torch.stack(features, dim=1)
         
-        
-        concatenated = torch.cat(features, dim=1)
-        
-        # Calculate statistics
-        stats = torch.mean(concatenated, dim=1)
-        if views > 1:
-            std = torch.var(concatenated, dim=1)
-#            std = torch.add(std, 1e-10) # avoid NaN gradients
-            stats = torch.cat([stats, std], dim=1)
+        # TODO adapt for only one view
+        if self.training:
+            # Drop view randomly
+            select = np.random.choice([1, 2, 3], p=self.drop_view_prob)
+            if select == 1: # Both views
+                stats = torch.cat([torch.mean(stacked, dim=1), 
+                                   torch.var(stacked, dim=1)], dim=1)
+    
+            elif select == 2: # PA only
+                stats = torch.cat([features[0], torch.zeros_like(features[0])], dim=1)
+            
+            elif select == 3: # L only
+                stats = torch.cat([torch.zeros_like(features[1]), features[1]], dim=1)
+        else:
+            stats = torch.cat([torch.mean(stacked, dim=1), 
+                               torch.var(stacked, dim=1)], dim=1)        
            
         out = self.combined(stats)
         out = F.relu(out, inplace=True)
         out = F.adaptive_avg_pool2d(out, (1, 1)).view(out.size(0), -1)
         out = self.classifier(out)
         return out
+
+    
+class JointConcatModel(Hemis):
+    def __init__(self):
+        super(JointConcatModel, self).__init__()
+    
+    def forward(self, images):
+        features = self._propagate_modalities(images)
+        concatenated = torch.cat(features, dim=1)
+        out = self.combined(concatenated)
+        out = F.relu(out, inplace=True)
+        out = F.adaptive_avg_pool2d(out, (1, 1)).view(out.size(0), -1)
+        out = self.classifier(out)
+        return out
+
+        

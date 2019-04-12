@@ -15,18 +15,14 @@ from torchvision.transforms import Compose
 
 from dataset import PCXRayDataset, Normalize, ToTensor, split_dataset
 from densenet import DenseNet, add_dropout
-from hemis import Hemis, add_dropout_hemis
+from hemis import Hemis, add_dropout_hemis, JointConcatModel
 
 from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_score
 import pandas as pd
 
 
-torch.manual_seed(42)
-np.random.seed(42)
-
-
 def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100, learning_rate=1e-4, batch_size=1,
-          dropout=True, pretrained=False, min_patients_per_label=50, seed=666):
+          dropout=True, pretrained=False, min_patients_per_label=50, seed=666, concat=False):
     assert target in ['pa', 'l', 'joint']
 
     output_dir = output_dir.format(seed)
@@ -64,7 +60,10 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
         in_channels = 2 if target == 'joint' else 1
     
     if target == 'joint':
-        model = Hemis(num_classes=trainset.nb_labels, in_channels=1)
+        if concat:
+            model = JointConcatModel(num_classes=trainset.nb_labels, in_channels=1)
+        else:
+            model = Hemis(num_classes=trainset.nb_labels, in_channels=1)
     else:
         model = DenseNet(num_classes=trainset.nb_labels, in_channels=in_channels)
 
@@ -73,12 +72,10 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
         model = add_dropout(model, p=0.2) if target != 'joint' else add_dropout_hemis(model, p=0.2)
 
     print(trainset.labels_weights)
-    # criterion = nn.MultiLabelSoftMarginLoss(reduction='none')
     criterion = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(device))
 
     # Optimizer
     optimizer = Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
-    # optimizer = SGD(model.parameters(), lr=learning_rate, weight_decay=1e-4)
     scheduler = StepLR(optimizer, step_size=10, gamma=0.1)  # Used to decay learning rate
 
     # Resume training if possible
@@ -148,7 +145,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
                 input, label = data['L'].to(device), data['encoded_labels'].to(device)
             else:
                 pa, l, label = data['PA'].to(device), data['L'].to(device), data['encoded_labels'].to(device)
-                input = torch.cat([pa, l], dim=1)
+                input = [pa, l]
             # sample_weights = data['sample_weight'].to(device)
 
             # Forward
@@ -186,7 +183,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
                 input, label = data['L'].to(device), data['encoded_labels'].to(device)
             else:
                 pa, l, label = data['PA'].to(device), data['L'].to(device), data['encoded_labels'].to(device)
-                input = torch.cat([pa, l], dim=1)
+                input = [pa, l]
 
             # Forward
             output = model(input)
@@ -256,8 +253,12 @@ if __name__ == "__main__":
     parser.add_argument('--learning_rate', type=float, default=0.0001)
     parser.add_argument('--min_patients', type=int, default=50)
     parser.add_argument('--seed', type=int, default=666)
+    parser.add_argument('--concat', type=bool, default=False)
     args = parser.parse_args()
-
+    
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    
     train(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
           batch_size=args.batch_size, pretrained=args.pretrained, learning_rate=args.learning_rate,
-          min_patients_per_label=args.min_patients, seed=args.seed)
+          min_patients_per_label=args.min_patients, seed=args.seed, concat=args.concat)
