@@ -19,8 +19,7 @@ torch.manual_seed(42)
 np.random.seed(42)
 
 
-def test(data_dir, csv_path, splits_path, output_dir, #weights_file, 
-         target='pa', batch_size=1, dropout=True, pretrained=False, 
+def test(data_dir, csv_path, splits_path, output_dir, target='pa', batch_size=1, dropout=True, pretrained=False,
          min_patients_per_label=100, seed=666):
     assert target in ['pa', 'l', 'joint']
     output_dir = output_dir.format(seed)
@@ -63,8 +62,7 @@ def test(data_dir, csv_path, splits_path, output_dir, #weights_file,
     df_file = '{}-metrics.csv'.format(target)
     metricsdf = pd.read_csv(join(output_dir, df_file))
     best_epoch = int(metricsdf.idxmax()['auc'])
-    
-    
+
     # Load trained weights
     weights_file = join(output_dir, '{}-e{}.pt'.format(target, best_epoch))
     model.load_state_dict(torch.load(weights_file))
@@ -94,9 +92,10 @@ def test(data_dir, csv_path, splits_path, output_dir, #weights_file,
     y_preds = np.vstack(y_preds)
     y_true = np.vstack(y_true)
     
-    np.save("{}_preds_{}".format(target,seed), y_preds)
-    np.save("{}_true_{}".format(target,seed), y_true)
+    np.save("{}_preds_{}".format(target, seed), y_preds)
+    np.save("{}_true_{}".format(target, seed), y_true)
 
+    print(y_preds.shape)
     auc = roc_auc_score(y_true, y_preds, average=None)
     print("auc")
     print(auc)
@@ -111,7 +110,7 @@ def test(data_dir, csv_path, splits_path, output_dir, #weights_file,
                
     print(metrics)
     with open(join(output_dir, '{}-seed{}-test.pkl'.format(target, seed)), 'wb') as f:
-        pickle.dump({'auc':auc, 'prc':prc}, f)
+        pickle.dump({'auc': auc, 'prc': prc}, f)
 
 
 if __name__ == "__main__":
@@ -127,7 +126,6 @@ if __name__ == "__main__":
     parser.add_argument('--min_patients', type=int, default=50)
     args = parser.parse_args()
     print(args)
-    test(args.data_dir, args.csv_path, args.splits_path, args.output_dir, 
-         target=args.target, 
+    test(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
          batch_size=args.batch_size, pretrained=args.pretrained, 
          min_patients_per_label=args.min_patients,  seed=args.seed)
