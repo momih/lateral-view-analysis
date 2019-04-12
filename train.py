@@ -21,7 +21,7 @@ from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_sco
 import pandas as pd
 
 
-def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100, learning_rate=1e-4, batch_size=1,
+def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=50, learning_rate=1e-4, batch_size=1,
           dropout=True, pretrained=False, min_patients_per_label=50, seed=666, concat=False):
     assert target in ['pa', 'l', 'joint']
 
@@ -170,7 +170,31 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
                     pickle.dump(train_loss, f)
                 torch.save(model.state_dict(), join(output_dir, '{0}-e{1}-i{2}.pt'.format(target, epoch, i + 1)))
                 running_loss = torch.zeros(1, requires_grad=False).to(device)
+            
+        # Evaluate training data
+        train_preds = []
+        train_true = []
+        for i, data in enumerate(trainloader, 0):
+            if target == 'pa':
+                input, label = data['PA'].to(device), data['encoded_labels'].to(device)
+            elif target == 'l':
+                input, label = data['L'].to(device), data['encoded_labels'].to(device)
+            else:
+                pa, l, label = data['PA'].to(device), data['L'].to(device), data['encoded_labels'].to(device)
+                input = [pa, l]
 
+            # Forward
+            output = model(input)
+            output = torch.sigmoid(output)
+
+            # Save predictions
+            train_preds.append(output.data.cpu().numpy())
+            train_true.append(label.data.cpu().numpy())
+
+        train_preds = np.vstack(train_preds)
+        train_true = np.vstack(train_true)
+        train_auc = roc_auc_score(train_true, train_preds, average=None)
+        
         model.eval()
 
         running_loss = torch.zeros(1, requires_grad=False, dtype=torch.float).to(device)
@@ -204,13 +228,16 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
         val_preds_all.append(val_preds)
         auc = roc_auc_score(val_true, val_preds, average=None)
         val_auc.append(auc)
-        print("auc")
-        print(auc)
+        print("Validation AUC, Train AUC and difference")
+        diff_train_val = auc - train_auc
+        diff_train_val = np.stack([auc, train_auc, diff_train_val], axis=-1)
+        print(diff_train_val)
         print()
+        
         prc = average_precision_score(val_true, val_preds, average=None)
         val_prc.append(prc)
-        print("prc")
-        print(prc)
+#        print("prc")
+#        print(prc)
         print()
         metrics = {'accuracy': accuracy_score(val_true, np.where(val_preds > 0.5, 1, 0)),
                    'auc': roc_auc_score(val_true, val_preds, average='weighted'),
