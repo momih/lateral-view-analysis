@@ -22,6 +22,13 @@ def _load_per_label(results_dir, target, metric):
     return res
 
 
+def _load_test(results_dir, seed, target):
+    with open(join(results_dir.format(seed), '{}-seed{}-test.pkl'.format(target, seed)), 'rb') as f:
+        res = pickle.load(f)
+
+    return res
+
+
 def plot_metrics(results_dir):
     epoch = 40
 
@@ -111,100 +118,105 @@ def plot_per_label(results_dir, labels_list):
     plt.close()
 
 
-def plot_per_label_diff(results_dir, labels_list):
-    epoch = 40
-
+def plot_per_label_diff(results_dir, labels_list, seed_list, nb_patients):
     diff_map = {0: 'PA', 1: 'L', 2: 'PA+L', 3: 'Indifferent'}
     clr_map = {'PA': 'b', 'L': 'r', 'PA+L': 'g', 'Indifferent': 'm'}
 
-    pa_auc = _load_per_label(results_dir, 'pa', 'auc')[epoch]
-    l_auc = _load_per_label(results_dir, 'l', 'auc')[epoch]
-    joint_auc = _load_per_label(results_dir, 'joint', 'auc')[epoch]
-    arr_auc = np.array([pa_auc, l_auc, joint_auc])
-    diff_auc = np.max(arr_auc, axis=0) - np.min(arr_auc, axis=0)
-    amax_auc = np.argmax(arr_auc, axis=0)
-    amax_auc[np.where(diff_auc < 0.02)] = 3
-    amax_auc = [diff_map[d] for d in list(amax_auc)]
+    pa_list = {'auc': [], 'prc': []}
+    l_list = {'auc': [], 'prc': []}
+    joint_list = {'auc': [], 'prc': []}
+    for seed in seed_list:
+        pa = _load_test(results_dir, seed, 'pa')
+        l = _load_test(results_dir, seed, 'l')
+        joint = _load_test(results_dir, seed, 'joint')
 
-    pa_prc = _load_per_label(results_dir, 'pa', 'prc')[epoch]
-    l_prc = _load_per_label(results_dir, 'l', 'prc')[epoch]
-    joint_prc = _load_per_label(results_dir, 'joint', 'prc')[epoch]
-    arr_prc = np.array([pa_prc, l_prc, joint_prc])
-    diff_prc = np.max(arr_prc, axis=0) - np.min(arr_prc, axis=0)
-    amax_prc = np.argmax(arr_prc, axis=0)
-    amax_prc[np.where(diff_prc < 0.01)] = 3
-    amax_prc = [diff_map[d] for d in list(amax_prc)]
+        pa_list['auc'].append(pa['auc'])
+        pa_list['prc'].append(pa['prc'])
+        l_list['auc'].append(l['auc'])
+        l_list['prc'].append(l['prc'])
+        joint_list['auc'].append(joint['auc'])
+        joint_list['prc'].append(joint['prc'])
 
+    pa_list['auc'] = np.array(pa_list['auc'])
+    l_list['auc'] = np.array(l_list['auc'])
+    joint_list['auc'] = np.array(joint_list['auc'])
     d = {
         'Labels': labels_list,
-        'Best view (AuC)': amax_auc,
-        'Area under curve': np.max(arr_auc, axis=0),
-        'Diff auc': diff_auc,
-        'Min auc': np.min(arr_auc, axis=0),
-        'Best view (Precision)': amax_prc,
-        'Precision': np.max(arr_prc, axis=0),
-        'Diff Prc': diff_prc,
-        'Min prc': np.min(arr_prc, axis=0)
+        'pa_mean': pa_list['auc'].mean(0),
+        'pa_std': pa_list['auc'].std(0),
+        'l_mean': l_list['auc'].mean(0),
+        'l_std': l_list['auc'].std(0),
+        'joint_mean': joint_list['auc'].mean(0),
+        'joint_std': joint_list['auc'].std(0)
     }
+
+    arr_auc = np.vstack([d['pa_mean'], d['l_mean'], d['joint_mean']])
+    arr_std = np.vstack([d['pa_std'], d['l_std'], d['joint_std']])
+    amax_auc = np.argmax(arr_auc[0:2], axis=0)
+    # diff_auc = np.abs(arr_auc[0] - np.max(arr_auc[1:], axis=0))
+    diff_auc = np.abs(arr_auc[0] - arr_auc[1])
+
+    d['Area under curve'] = np.max(arr_auc, axis=0)
+    d['std'] = arr_std[amax_auc][0]
+    d['diff'] = np.max(arr_auc, axis=0) - diff_auc
+
+    amax_auc[np.where(diff_auc < d['std'])] = 3
+
+    d['Best view'] = [diff_map[d] for d in list(amax_auc)]
+
+    d['clrs'] = [clr_map[x] for x in d['Best view']]
+
     df = pd.DataFrame(d)
-    df = df.sort_values(['Best view (AuC)', 'Area under curve'], ascending=False)
+    df = df.sort_values(['Best view', 'Area under curve'], ascending=False)
 
     sns.set(style="whitegrid")
-
-    clrs_auc = [clr_map[x] for x in df['Best view (AuC)']]
 
     pal_patch = mpatches.Patch(color='g', label='PA+L')
     pa_patch = mpatches.Patch(color='b', label='PA')
     l_patch = mpatches.Patch(color='r', label='L')
     ind_patch = mpatches.Patch(color='m', label='Indifferent')
 
-    fig, ax = plt.subplots(figsize=(10, 13))
+    fig = plt.figure(figsize=(15, 8.2))
+    ax1 = fig.add_subplot(121)
+    ax2 = fig.add_subplot(122)
+
+    condition = df['Best view'] == 'PA'
 
     sns.set_color_codes("pastel")
-    sns.barplot(x='Area under curve', y='Labels', data=df, palette=clrs_auc)
+    sns.barplot(x='Area under curve', y='Labels', data=df[condition], palette=df[condition]['clrs'], ax=ax1)
+    sns.barplot(x='Area under curve', y='Labels', data=df[~condition], palette=df[~condition]['clrs'], ax=ax2)
     sns.set_color_codes("deep")
-    sns.barplot(x='Min auc', y='Labels', data=df, palette=clrs_auc)
+    sns.barplot(x='diff', y='Labels', data=df[condition], palette=df[condition]['clrs'], ax=ax1)
+    sns.barplot(x='diff', y='Labels', data=df[~condition], palette=df[~condition]['clrs'], ax=ax2)
 
-    ax.legend(handles=[pal_patch, pa_patch, l_patch, ind_patch], ncol=2, loc="lower right", frameon=True)
-    ax.set(ylabel="", xlabel="")
-    ax.set_title('Best AUC for each label')
-    plt.xlim((0.5, 1.))
+    ax1.errorbar(x=df[condition]['Area under curve'], y=np.arange(len(df[condition])),
+                 xerr=df[condition]['std'], fmt='none', c='k', capsize=3)
+    ax2.errorbar(x=df[~condition]['Area under curve'], y=np.arange(len(df[~condition])),
+                 xerr=df[~condition]['std'], fmt='none', c='k', capsize=3)
+
+    ax2.legend(handles=[pa_patch, l_patch, ind_patch], ncol=2, loc="lower right", frameon=True)
+    ax1.set(ylabel="", xlabel="")
+    ax2.set(ylabel="", xlabel="")
+    fig.suptitle('Best AUC for each label ({} patients)'.format(nb_patients), fontsize=16)
+    ax1.set_xlim((0.5, 1.))
+    ax2.set_xlim((0.5, 1.))
+    # ax.set_ylim((-1, len(labels_list)))
     sns.despine(left=True, bottom=True)
     plt.tight_layout()
-    plt.savefig(join(results_dir, '_results_auc_per_label_diff.png'))
-    plt.close()
-
-    ############
-    df = df.sort_values(['Best view (Precision)', 'Precision'], ascending=False)
-
-    clrs_prc = [clr_map[x] for x in df['Best view (Precision)']]
-
-    fig, ax = plt.subplots(figsize=(10, 13))
-
-    sns.set_color_codes("pastel")
-    sns.barplot(x='Precision', y='Labels', data=df, palette=clrs_prc)
-    sns.set_color_codes("deep")
-    sns.barplot(x='Min prc', y='Labels', data=df, palette=clrs_prc)
-
-    ax.legend(handles=[pal_patch, pa_patch, l_patch, ind_patch], ncol=2, loc="lower right", frameon=True)
-    ax.set(ylabel="", xlabel="")
-    ax.set_title('Best precision for each label')
-    plt.xlim((0., 0.7))
-    sns.despine(left=True, bottom=True)
-    plt.tight_layout()
-    plt.savefig(join(results_dir, '_results_precision_per_label_diff.png'))
+    plt.savefig(join(results_dir[:-3], '_results_auc_per_label_diff.png'))
     plt.close()
 
 
 if __name__ == "__main__":
     num_patients = 100
-    results_dir = './models/s3'
+    results_dir = './models/s{}'
     cohort_file = './data/joint_PA_L.csv'
     img_dir = './data/processed'
+    seed_list = [0, 1, 2, 3]
 
     dataset = PCXRayDataset(img_dir, cohort_file, None, min_patients_per_label=num_patients)
-    labels_list = ['{} ({})'.format(l, c // 2) for l, c in zip(dataset.labels, dataset.labels_count)]
+    labels_list = ['{} ({})'.format(l.replace('normal', 'no finding'), c // 2) for l, c in zip(dataset.labels, dataset.labels_count)]
 
     # plot_metrics(results_dir)
-    plot_per_label(results_dir, labels_list)
-    plot_per_label_diff(results_dir, labels_list)
+    # plot_per_label(results_dir, labels_list)
+    plot_per_label_diff(results_dir, labels_list, seed_list, len(dataset))

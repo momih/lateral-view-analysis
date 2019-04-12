@@ -12,16 +12,18 @@ from densenet import DenseNet, add_dropout
 from hemis import Hemis, add_dropout_hemis
 
 from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_score
-
+import pandas as pd
+import pickle
 
 torch.manual_seed(42)
 np.random.seed(42)
 
 
-def test(data_dir, csv_path, splits_path, output_dir, weights_file, 
-         target='pa', batch_size=1, dropout=True, pretrained=False, 
-         min_patients_per_label=50):
+def test(data_dir, csv_path, splits_path, output_dir, target='pa', batch_size=1, dropout=True, pretrained=False,
+         min_patients_per_label=100, seed=666):
     assert target in ['pa', 'l', 'joint']
+    output_dir = output_dir.format(seed)
+    splits_path = splits_path.format(seed)
 
     print("Test mode: {}".format(target))
 
@@ -56,8 +58,13 @@ def test(data_dir, csv_path, splits_path, output_dir, weights_file,
     if dropout:
         model = add_dropout(model, p=0.2) if target != 'joint' else add_dropout_hemis(model, p=0.2)
 
+    # Find best weights
+    df_file = '{}-metrics.csv'.format(target)
+    metricsdf = pd.read_csv(join(output_dir, df_file))
+    best_epoch = int(metricsdf.idxmax()['auc'])
+
     # Load trained weights
-    weights_file = join(output_dir, weights_file)
+    weights_file = join(output_dir, '{}-e{}.pt'.format(target, best_epoch))
     model.load_state_dict(torch.load(weights_file))
 
     model.to(device)
@@ -85,9 +92,10 @@ def test(data_dir, csv_path, splits_path, output_dir, weights_file,
     y_preds = np.vstack(y_preds)
     y_true = np.vstack(y_true)
     
-    np.save("{}_preds_{}".format(target, min_patients_per_label), y_preds)
-    np.save("{}_true_{}".format(target, min_patients_per_label), y_true)
+    np.save("{}_preds_{}".format(target, seed), y_preds)
+    np.save("{}_true_{}".format(target, seed), y_true)
 
+    print(y_preds.shape)
     auc = roc_auc_score(y_true, y_preds, average=None)
     print("auc")
     print(auc)
@@ -101,6 +109,8 @@ def test(data_dir, csv_path, splits_path, output_dir, weights_file,
                'prc': average_precision_score(y_true, y_preds, average='weighted')}
                
     print(metrics)
+    with open(join(output_dir, '{}-seed{}-test.pkl'.format(target, seed)), 'wb') as f:
+        pickle.dump({'auc': auc, 'prc': prc}, f)
 
 
 if __name__ == "__main__":
@@ -109,15 +119,13 @@ if __name__ == "__main__":
     parser.add_argument('csv_path', type=str)
     parser.add_argument('splits_path', type=str)
     parser.add_argument('output_dir', type=str)
-    parser.add_argument('weights_file', type=str)
     parser.add_argument('--target', type=str, default='pa')
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--pretrained', type=bool, default=False)
-    parser.add_argument('--learning_rate', type=float, default=0.0001)
+    parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--min_patients', type=int, default=50)
     args = parser.parse_args()
     print(args)
-    test(args.data_dir, args.csv_path, args.splits_path, args.output_dir, 
-         weights_file=args.weights_file, target=args.target, 
+    test(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
          batch_size=args.batch_size, pretrained=args.pretrained, 
-         min_patients_per_label=args.min_patients)
+         min_patients_per_label=args.min_patients,  seed=args.seed)
