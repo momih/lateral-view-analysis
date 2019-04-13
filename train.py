@@ -273,7 +273,7 @@ if __name__ == "__main__":
     parser.add_argument('--merge', type=int, default=2)
     parser.add_argument('--concat', type=bool, default=False)
     args = parser.parse_args()
-    
+    print(args)
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     
