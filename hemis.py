@@ -180,8 +180,8 @@ class Hemis(nn.Module):
 
     
 class JointConcatModel(Hemis):
-    def __init__(self):
-        super(JointConcatModel, self).__init__()
+    def __init__(self, **kwargs):
+        super(JointConcatModel, self).__init__(**kwargs)
     
     def forward(self, images):
         features = self._propagate_modalities(images)
