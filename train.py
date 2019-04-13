@@ -22,7 +22,8 @@ import pandas as pd
 
 
 def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=50, learning_rate=1e-4, batch_size=1,
-          dropout=True, pretrained=False, min_patients_per_label=50, seed=666, concat=False):
+          dropout=True, pretrained=False, min_patients_per_label=50, seed=666, 
+          concat=False, merge_at=2):
     assert target in ['pa', 'l', 'joint']
 
     output_dir = output_dir.format(seed)
@@ -44,11 +45,13 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=50,
     preprocessing = Compose([Normalize(), ToTensor()])
     trainset = PCXRayDataset(data_dir, csv_path, splits_path, transform=preprocessing, pretrained=pretrained,
                              min_patients_per_label=min_patients_per_label)
-    trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=2)
+    trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True, 
+                             num_workers=2, pin_memory=True)
 
     valset = PCXRayDataset(data_dir, csv_path, splits_path, transform=preprocessing, dataset='val',
                            pretrained=pretrained, min_patients_per_label=min_patients_per_label)
-    valloader = DataLoader(valset, batch_size=batch_size, shuffle=True, num_workers=2)
+    valloader = DataLoader(valset, batch_size=batch_size, shuffle=True, 
+                           num_workers=2, pin_memory=True)
 
     print("{0} patients in training set.".format(len(trainset)))
     print("{0} patients in validation set.".format(len(valset)))
@@ -63,7 +66,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=50,
         if concat:
             model = JointConcatModel(num_classes=trainset.nb_labels, in_channels=1)
         else:
-            model = Hemis(num_classes=trainset.nb_labels, in_channels=1)
+            model = Hemis(num_classes=trainset.nb_labels, in_channels=1, merge_at=merge_at)
     else:
         model = DenseNet(num_classes=trainset.nb_labels, in_channels=in_channels)
 
@@ -218,7 +221,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=50,
         print("Validation AUC, Train AUC and difference")
         diff_train_val = auc - train_auc
         diff_train_val = np.stack([auc, train_auc, diff_train_val], axis=-1)
-        print(diff_train_val)
+        print(diff_train_val.round(4))
         print()
         
         prc = average_precision_score(val_true, val_preds, average=None)
@@ -267,6 +270,7 @@ if __name__ == "__main__":
     parser.add_argument('--learning_rate', type=float, default=0.0001)
     parser.add_argument('--min_patients', type=int, default=50)
     parser.add_argument('--seed', type=int, default=666)
+    parser.add_argument('--merge', type=int, default=2)
     parser.add_argument('--concat', type=bool, default=False)
     args = parser.parse_args()
     
@@ -275,4 +279,5 @@ if __name__ == "__main__":
     
     train(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
           batch_size=args.batch_size, pretrained=args.pretrained, learning_rate=args.learning_rate,
-          min_patients_per_label=args.min_patients, seed=args.seed, concat=args.concat)
+          min_patients_per_label=args.min_patients, seed=args.seed, 
+          concat=args.concat, merge_at=args.merge)
