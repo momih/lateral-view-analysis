@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 from torch import nn
 from torchvision.transforms import Compose
 
-from dataset import PCXRayDataset, Normalize, ToTensor, split_dataset
+from dataset import PCXRayDataset, Normalize, ToTensor, RandomRotation, GaussianNoise, ToPILImage, split_dataset
 from densenet import DenseNet, add_dropout
 from hemis import Hemis, add_dropout_hemis, JointConcatModel
 
@@ -21,10 +21,13 @@ from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_sco
 import pandas as pd
 
 
-def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=50, learning_rate=1e-4, batch_size=1,
-          dropout=True, pretrained=False, min_patients_per_label=50, seed=666, 
+def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100, learning_rate=1e-4, batch_size=1,
+          dropout=True, pretrained=False, min_patients_per_label=50, seed=666, data_augmentation=True,
           concat=False, merge_at=2):
     assert target in ['pa', 'l', 'joint']
+
+    torch.manual_seed(seed)
+    np.random.seed(seed)
 
     output_dir = output_dir.format(seed)
     splits_path = splits_path.format(seed)
@@ -42,15 +45,20 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=50,
     print('Device that will be used is: {0}'.format(device))
 
     # Load data
-    preprocessing = Compose([Normalize(), ToTensor()])
-    trainset = PCXRayDataset(data_dir, csv_path, splits_path, transform=preprocessing, pretrained=pretrained,
+    val_transfo = [Normalize(), ToTensor()]
+    if data_augmentation:
+        train_transfo = [Normalize(), ToPILImage(), RandomRotation(), ToTensor(), GaussianNoise()]
+    else:
+        train_transfo = val_transfo
+
+    trainset = PCXRayDataset(data_dir, csv_path, splits_path, transform=Compose(train_transfo), pretrained=pretrained,
                              min_patients_per_label=min_patients_per_label)
-    trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True, 
+    trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True,
                              num_workers=2, pin_memory=True)
 
-    valset = PCXRayDataset(data_dir, csv_path, splits_path, transform=preprocessing, dataset='val',
+    valset = PCXRayDataset(data_dir, csv_path, splits_path, transform=Compose(val_transfo), dataset='val',
                            pretrained=pretrained, min_patients_per_label=min_patients_per_label)
-    valloader = DataLoader(valset, batch_size=batch_size, shuffle=True, 
+    valloader = DataLoader(valset, batch_size=batch_size, shuffle=True,
                            num_workers=2, pin_memory=True)
 
     print("{0} patients in training set.".format(len(trainset)))
@@ -162,11 +170,11 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=50,
             # Backward
             loss.backward()
             optimizer.step()
-            
+
             # Save predictions
             train_preds.append(torch.sigmoid(output).data.cpu().numpy())
             train_true.append(label.data.cpu().numpy())
-            
+
             # print statistics
             running_loss += loss.data
             print_every = max(1, len(trainset) // (20 * batch_size))
@@ -179,12 +187,11 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=50,
                     pickle.dump(train_loss, f)
                 torch.save(model.state_dict(), join(output_dir, '{0}-e{1}-i{2}.pt'.format(target, epoch, i + 1)))
                 running_loss = torch.zeros(1, requires_grad=False).to(device)
-            
 
         train_preds = np.vstack(train_preds)
         train_true = np.vstack(train_true)
         train_auc = roc_auc_score(train_true, train_preds, average=None)
-        
+
         model.eval()
 
         running_loss = torch.zeros(1, requires_grad=False, dtype=torch.float).to(device)
@@ -223,11 +230,11 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=50,
         diff_train_val = np.stack([auc, train_auc, diff_train_val], axis=-1)
         print(diff_train_val.round(4))
         print()
-        
+
         prc = average_precision_score(val_true, val_preds, average=None)
         val_prc.append(prc)
-#        print("prc")
-#        print(prc)
+        # print("prc")
+        # print(prc)
         print()
         metrics = {'accuracy': accuracy_score(val_true, np.where(val_preds > 0.5, 1, 0)),
                    'auc': roc_auc_score(val_true, val_preds, average='weighted'),
@@ -273,11 +280,8 @@ if __name__ == "__main__":
     parser.add_argument('--merge', type=int, default=2)
     parser.add_argument('--concat', type=bool, default=False)
     args = parser.parse_args()
-    print(args)
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
-    
+
     train(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
           batch_size=args.batch_size, pretrained=args.pretrained, learning_rate=args.learning_rate,
-          min_patients_per_label=args.min_patients, seed=args.seed, 
+          min_patients_per_label=args.min_patients, seed=args.seed,
           concat=args.concat, merge_at=args.merge)

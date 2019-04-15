@@ -176,7 +176,7 @@ def plot_per_label_diff(results_dir, labels_list, seed_list, nb_patients):
     l_patch = mpatches.Patch(color='r', label='L')
     ind_patch = mpatches.Patch(color='m', label='Indifferent')
 
-    fig = plt.figure(figsize=(15, 8.2))
+    fig = plt.figure(figsize=(15, 8))
     ax1 = fig.add_subplot(121)
     ax2 = fig.add_subplot(122)
 

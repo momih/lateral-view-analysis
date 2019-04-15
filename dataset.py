@@ -1,12 +1,14 @@
-from torch.utils.data import Dataset
-from sklearn.preprocessing import MultiLabelBinarizer
-import torch
-
-from PIL import Image
 import numpy as np
-import pandas as pd
 from os.path import join
+import pandas as pd
 import pickle
+from PIL import Image
+
+from sklearn.preprocessing import MultiLabelBinarizer
+
+import torch
+from torch.utils.data import Dataset
+from torchvision import transforms
 
 
 def split_dataset(csvpath, output, train=0.6, val=0.2, seed=666):
@@ -71,16 +73,16 @@ class PCXRayDataset(Dataset):
         pa_path = subset[subset.Projection == 'PA'][['ImageID', 'ImageDir']]
         pa_path = join(self.datadir, str(int(pa_path['ImageDir'].tolist()[0])), pa_path['ImageID'].tolist()[0])
         # pa_path = './data/processed/0/46523715740384360192496023767246369337_veyewt.png'
-        pa_img = np.array(Image.open(pa_path))[np.newaxis]
+        pa_img = np.array(Image.open(pa_path))[..., np.newaxis]
         if self.pretrained:
-            pa_img = np.repeat(pa_img, 3, axis=0)
+            pa_img = np.repeat(pa_img, 3, axis=-1)
 
         l_path = subset[subset.Projection == 'L'][['ImageID', 'ImageDir']]
         l_path = join(self.datadir, str(int(l_path['ImageDir'].tolist()[0])), l_path['ImageID'].tolist()[0])
         # l_path = './data/processed/0/46523715740384360192496023767246369337_veyewt.png'
-        l_img = np.array(Image.open(l_path))[np.newaxis]
+        l_img = np.array(Image.open(l_path))[..., np.newaxis]
         if self.pretrained:
-            l_img = np.repeat(l_img, 3, axis=0)
+            l_img = np.repeat(l_img, 3, axis=-1)
 
         sample = {'PA': pa_img, 'L': l_img}
 
@@ -136,17 +138,61 @@ class Normalize(object):
         l_img = 2 * (l_img / 65536) - 1.
         l_img = l_img.astype(np.float32)
 
-        return {'PA': pa_img, 'L': l_img}
+        sample['PA'] = pa_img
+        sample['L'] = l_img
+        return sample
 
 
 class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
 
     def __call__(self, sample):
+        to_tensor = transforms.ToTensor()
+        sample['PA'] = to_tensor(sample['PA'])
+        sample['L'] = to_tensor(sample['L'])
+
+        return sample
+
+
+class ToPILImage(object):
+    """Convert ndarrays in sample to PIL images."""
+
+    def __call__(self, sample):
+        to_pil = transforms.ToPILImage()
+        sample['PA'] = to_pil(sample['PA'])
+        sample['L'] = to_pil(sample['L'])
+
+        return sample
+
+
+class GaussianNoise(object):
+    """Adds Gaussian noise to the PA and L (mean 0, std 0.05)"""
+
+    def __call__(self, sample):
         pa_img, l_img = sample['PA'], sample['L']
 
-        return {'PA': torch.from_numpy(pa_img),
-                'L': torch.from_numpy(l_img)}
+        pa_img += torch.randn_like(pa_img) * 0.05
+        l_img += torch.randn_like(l_img) * 0.05
+
+        sample['PA'] = pa_img
+        sample['L'] = l_img
+        return sample
+
+
+class RandomRotation(object):
+    """Adds a random rotation to the PA and L (between -5 and +5)"""
+
+    def __call__(self, sample):
+        pa_img, l_img = sample['PA'], sample['L']
+
+        rot_amount = np.random.rand() * 5.
+        rot = transforms.RandomRotation(rot_amount)
+        pa_img = rot(pa_img)
+        l_img = rot(l_img)
+
+        sample['PA'] = pa_img
+        sample['L'] = l_img
+        return sample
 
 
 if __name__ == '__main__':
