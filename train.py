@@ -280,7 +280,9 @@ if __name__ == "__main__":
     parser.add_argument('--merge', type=int, default=2)
     parser.add_argument('--concat', type=bool, default=False)
     args = parser.parse_args()
+    np.set_printoptions(suppress=True, precision=4)
 
+    print(args)
     train(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
           batch_size=args.batch_size, pretrained=args.pretrained, learning_rate=args.learning_rate,
           min_patients_per_label=args.min_patients, seed=args.seed,

@@ -9,22 +9,24 @@ from torchvision.transforms import Compose
 
 from dataset import PCXRayDataset, Normalize, ToTensor, split_dataset
 from densenet import DenseNet, add_dropout
-from hemis import Hemis, add_dropout_hemis
+from hemis import Hemis, add_dropout_hemis, JointConcatModel
 
 from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_score
 import pandas as pd
 import pickle
 
-torch.manual_seed(42)
-np.random.seed(42)
 
 
 def test(data_dir, csv_path, splits_path, output_dir, target='pa', batch_size=1, dropout=True, pretrained=False,
-         min_patients_per_label=100, seed=666):
+         min_patients_per_label=100, seed=666, concat=False, merge_at=3):
+
     assert target in ['pa', 'l', 'joint']
     output_dir = output_dir.format(seed)
     splits_path = splits_path.format(seed)
-
+    
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    
     print("Test mode: {}".format(target))
 
     if not exists(splits_path):
@@ -92,8 +94,8 @@ def test(data_dir, csv_path, splits_path, output_dir, target='pa', batch_size=1,
     y_preds = np.vstack(y_preds)
     y_true = np.vstack(y_true)
     
-    np.save("{}_preds_{}".format(target, seed), y_preds)
-    np.save("{}_true_{}".format(target, seed), y_true)
+    np.save(join(output_dir, "{}_preds_{}".format(target, seed)), y_preds)
+    np.save(join(output_dir, "{}_true_{}".format(target, seed)), y_true)
 
     print(y_preds.shape)
     auc = roc_auc_score(y_true, y_preds, average=None)
