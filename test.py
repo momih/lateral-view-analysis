@@ -9,24 +9,23 @@ from torchvision.transforms import Compose
 
 from dataset import PCXRayDataset, Normalize, ToTensor, split_dataset
 from densenet import DenseNet, add_dropout
-from hemis import Hemis, add_dropout_hemis, JointConcatModel
+from hemis import JointConcatModel, Hemis, add_dropout_hemis
 
 from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_score
 import pandas as pd
 import pickle
 
 
-
 def test(data_dir, csv_path, splits_path, output_dir, target='pa', batch_size=1, dropout=True, pretrained=False,
-         min_patients_per_label=100, seed=666, concat=False, merge_at=3):
-
+         min_patients_per_label=100, seed=666, concat=False, merge_at=2):
     assert target in ['pa', 'l', 'joint']
-    output_dir = output_dir.format(seed)
-    splits_path = splits_path.format(seed)
-    
+
     torch.manual_seed(seed)
     np.random.seed(seed)
-    
+
+    output_dir = output_dir.format(seed)
+    splits_path = splits_path.format(seed)
+
     print("Test mode: {}".format(target))
 
     if not exists(splits_path):
@@ -52,7 +51,10 @@ def test(data_dir, csv_path, splits_path, output_dir, target='pa', batch_size=1,
         in_channels = 2 if target == 'joint' else 1
     
     if target == 'joint':
-        model = Hemis(num_classes=testset.nb_labels, in_channels=1)
+        if concat:
+            model = JointConcatModel(num_classes=testset.nb_labels, in_channels=1)
+        else:
+            model = Hemis(num_classes=testset.nb_labels, in_channels=1, merge_at=merge_at)
     else:
         model = DenseNet(num_classes=testset.nb_labels, in_channels=in_channels)
 
@@ -81,7 +83,7 @@ def test(data_dir, csv_path, splits_path, output_dir, target='pa', batch_size=1,
             input, label = data['L'].to(device), data['encoded_labels'].to(device)
         else:
             pa, l, label = data['PA'].to(device), data['L'].to(device), data['encoded_labels'].to(device)
-            input = torch.cat([pa, l], dim=1)
+            input = [pa, l]
 
         # Forward
         output = model(input)
@@ -128,6 +130,7 @@ if __name__ == "__main__":
     parser.add_argument('--min_patients', type=int, default=50)
     args = parser.parse_args()
     print(args)
+
     test(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
          batch_size=args.batch_size, pretrained=args.pretrained, 
          min_patients_per_label=args.min_patients,  seed=args.seed)

@@ -11,7 +11,10 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 
 
-def split_dataset(csvpath, output, train=0.6, val=0.2, seed=666):
+def split_dataset(csvpath: str, output: str, train=0.6, val=0.2, seed=666) -> None:
+    """
+    Split the data contained in csvpath in train/val/test, and write the results in output.
+    """
     df = pd.read_csv(csvpath)
     df = df.sample(frac=1, random_state=seed).reset_index(drop=True)
     patients_ids = df.PatientID.unique()
@@ -30,6 +33,9 @@ def split_dataset(csvpath, output, train=0.6, val=0.2, seed=666):
 class PCXRayDataset(Dataset):
     def __init__(self, datadir, csvpath, splitpath, transform=None,
                  dataset='train', pretrained=False, min_patients_per_label=50):
+        """
+        Data reader. Only selects labels that at least min_patients_per_label patients have.
+        """
         super(PCXRayDataset, self).__init__()
 
         assert dataset in ['train', 'val', 'test']
@@ -129,7 +135,6 @@ class Normalize(object):
     """
     Changes images values to be between -1 and 1.
     """
-
     def __call__(self, sample):
         pa_img, l_img = sample['PA'], sample['L']
 
@@ -144,8 +149,9 @@ class Normalize(object):
 
 
 class ToTensor(object):
-    """Convert ndarrays in sample to Tensors."""
-
+    """
+    Convert ndarrays in sample to Tensors.
+    """
     def __call__(self, sample):
         to_tensor = transforms.ToTensor()
         sample['PA'] = to_tensor(sample['PA'])
@@ -155,8 +161,9 @@ class ToTensor(object):
 
 
 class ToPILImage(object):
-    """Convert ndarrays in sample to PIL images."""
-
+    """
+    Convert ndarrays in sample to PIL images.
+    """
     def __call__(self, sample):
         to_pil = transforms.ToPILImage()
         sample['PA'] = to_pil(sample['PA'])
@@ -166,8 +173,9 @@ class ToPILImage(object):
 
 
 class GaussianNoise(object):
-    """Adds Gaussian noise to the PA and L (mean 0, std 0.05)"""
-
+    """
+    Adds Gaussian noise to the PA and L (mean 0, std 0.05)
+    """
     def __call__(self, sample):
         pa_img, l_img = sample['PA'], sample['L']
 
@@ -180,8 +188,9 @@ class GaussianNoise(object):
 
 
 class RandomRotation(object):
-    """Adds a random rotation to the PA and L (between -5 and +5)"""
-
+    """
+    Adds a random rotation to the PA and L (between -5 and +5).
+    """
     def __call__(self, sample):
         pa_img, l_img = sample['PA'], sample['L']
 

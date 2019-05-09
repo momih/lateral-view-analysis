@@ -233,9 +233,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
 
         prc = average_precision_score(val_true, val_preds, average=None)
         val_prc.append(prc)
-        # print("prc")
-        # print(prc)
-        print()
+
         metrics = {'accuracy': accuracy_score(val_true, np.where(val_preds > 0.5, 1, 0)),
                    'auc': roc_auc_score(val_true, val_preds, average='weighted'),
                    'prc': average_precision_score(val_true, val_preds, average='weighted'),
