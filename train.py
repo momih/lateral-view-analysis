@@ -30,10 +30,11 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     np.random.seed(seed)
 
     output_dir = output_dir.format(seed)
+    output_dir = join('./logs', output_dir)
     splits_path = splits_path.format(seed)
 
     print("Training mode: {}".format(target))
-
+    
     if not exists(output_dir):
         os.makedirs(output_dir)
 
