@@ -7,7 +7,7 @@ import pickle
 import numpy as np
 
 import torch
-from torch.optim import Adam, SGD
+from torch.optim import Adam
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torch import nn
@@ -15,7 +15,7 @@ from torchvision.transforms import Compose
 
 from dataset import PCXRayDataset, Normalize, ToTensor, RandomRotation, GaussianNoise, ToPILImage, split_dataset
 from densenet import DenseNet, add_dropout
-from hemis import Hemis, add_dropout_hemis, JointConcatModel
+from hemis import Hemis, add_dropout_hemis, JointConcatModel, MultiTaskModel
 
 from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_score
 import pandas as pd
@@ -23,7 +23,7 @@ import pandas as pd
 
 def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100, learning_rate=1e-4, batch_size=1,
           dropout=True, pretrained=False, min_patients_per_label=50, seed=666, data_augmentation=True,
-          concat=False, merge_at=2):
+          joint_model_type='hemis', merge_at=2, combine_at='prepool', join_how='concat', loss_wts=None):
     assert target in ['pa', 'l', 'joint']
 
     torch.manual_seed(seed)
@@ -71,8 +71,11 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
         in_channels = 2 if target == 'joint' else 1
     
     if target == 'joint':
-        if concat:
+        if joint_model_type == 'concat':
             model = JointConcatModel(num_classes=trainset.nb_labels, in_channels=1)
+        elif joint_model_type == 'multitask':
+            model = MultiTaskModel(num_classes=trainset.nb_labels, in_channels=1,
+                                   combine_at=combine_at, join_how=join_how)
         else:
             model = Hemis(num_classes=trainset.nb_labels, in_channels=1, merge_at=merge_at)
     else:
@@ -84,6 +87,10 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
 
     print(trainset.labels_weights)
     criterion = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(device))
+    if joint_model_type == 'multitask':
+        criterion_L = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(device))
+        criterion_PA = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(device))
+
 
     # Optimizer
     optimizer = Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
@@ -164,7 +171,17 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
             # Forward
             output = model(input)
             optimizer.zero_grad()
-            loss = criterion(output, label)
+            if joint_model_type == 'multitask':
+                joint_logit, frontal_logit, lateral_logit = output
+                loss_J = criterion(joint_logit, label)
+                loss_PA = criterion_PA(frontal_logit, label) * loss_wts[0]
+                loss_L = criterion_L(lateral_logit, label) * loss_wts[1]
+                loss = loss_J + loss_L + loss_PA
+
+                output = joint_logit
+
+            else:
+                loss = criterion(output, label)
             # loss = (loss * sample_weights / sample_weights.sum()).sum()
 
             # Backward
@@ -208,6 +225,8 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
 
             # Forward
             output = model(input)
+            if joint_model_type == 'multitask':
+                output = output[0]
             running_loss += criterion(output, label).mean().data
 
             output = torch.sigmoid(output)
@@ -276,12 +295,16 @@ if __name__ == "__main__":
     parser.add_argument('--min_patients', type=int, default=50)
     parser.add_argument('--seed', type=int, default=666)
     parser.add_argument('--merge', type=int, default=2)
-    parser.add_argument('--concat', type=bool, default=False)
+    parser.add_argument('--jointmodel', type=str, default='hemis')
+    parser.add_argument('--mt-combine-at', dest='combine', type=str, default='prepool')
+    parser.add_argument('--mt-join', dest='join', type=str, default='concat')
+    parser.add_argument('--loss-weights', type=str, default='0.3,0.3')
+
     args = parser.parse_args()
     np.set_printoptions(suppress=True, precision=4)
-
+    multitask_loss_weights = [float(x) for x in args.loss_weights.split(",")]
     print(args)
     train(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
           batch_size=args.batch_size, pretrained=args.pretrained, learning_rate=args.learning_rate,
-          min_patients_per_label=args.min_patients, seed=args.seed,
-          concat=args.concat, merge_at=args.merge)
+          min_patients_per_label=args.min_patients, seed=args.seed, joint_model_type=args.jointmodel,
+          combine_at=args.combine, join_how=args.join, merge_at=args.merge, loss_wts=multitask_loss_weights)
