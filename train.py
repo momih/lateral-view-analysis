@@ -22,7 +22,7 @@ import pandas as pd
 
 
 def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100, learning_rate=1e-4, batch_size=1,
-          dropout=True, pretrained=False, min_patients_per_label=50, seed=666, data_augmentation=True,
+          dropout=None, pretrained=False, min_patients_per_label=50, seed=666, data_augmentation=True,
           joint_model_type='hemis', merge_at=2, combine_at='prepool', join_how='concat', loss_wts=None):
     assert target in ['pa', 'l', 'joint']
 
@@ -83,7 +83,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
 
     # Add dropout
     if dropout:
-        model = add_dropout(model, p=0.2) if target != 'joint' else add_dropout_hemis(model, p=0.2)
+        model = add_dropout(model, p=dropout) if joint_model_type != 'hemis' else add_dropout_hemis(model, p=dropout)
 
     print(trainset.labels_weights)
     criterion = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(device))
@@ -292,6 +292,7 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--pretrained', type=bool, default=False)
     parser.add_argument('--learning_rate', type=float, default=0.0001)
+    parser.add_argument('--dropout', type=float, default=0.2)
     parser.add_argument('--min_patients', type=int, default=50)
     parser.add_argument('--seed', type=int, default=666)
     parser.add_argument('--merge', type=int, default=2)
@@ -306,5 +307,5 @@ if __name__ == "__main__":
     print(args)
     train(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
           batch_size=args.batch_size, pretrained=args.pretrained, learning_rate=args.learning_rate,
-          min_patients_per_label=args.min_patients, seed=args.seed, joint_model_type=args.jointmodel,
+          min_patients_per_label=args.min_patients, dropout=args.dropout, seed=args.seed, joint_model_type=args.jointmodel,
           combine_at=args.combine, join_how=args.join, merge_at=args.merge, loss_wts=multitask_loss_weights)
