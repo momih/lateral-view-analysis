@@ -24,6 +24,8 @@ def test(data_dir, csv_path, splits_path, output_dir, target='pa', batch_size=1,
     np.random.seed(seed)
 
     output_dir = output_dir.format(seed)
+    output_dir = join('./logs', output_dir)
+
     splits_path = splits_path.format(seed)
 
     print("Test mode: {}".format(target))
