@@ -14,7 +14,7 @@ from hemis import JointConcatModel, Hemis, add_dropout_hemis, MultiTaskModel
 from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_score
 import pandas as pd
 import pickle
-
+from tqdm import tqdm
 
 def test(data_dir, csv_path, splits_path, output_dir, target='pa', batch_size=1, dropout=0.0, pretrained=False,
          min_patients_per_label=100, seed=666, merge_at=2, joint_model_type='hemis', 
@@ -82,7 +82,7 @@ def test(data_dir, csv_path, splits_path, output_dir, target='pa', batch_size=1,
 
     y_preds = []
     y_true = []
-    for data in testloader:
+    for data in tqdm(testloader):
         if target == 'pa':
             input, label = data['PA'].to(device), data['encoded_labels'].to(device)
         elif target == 'l':
