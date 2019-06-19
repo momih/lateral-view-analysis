@@ -9,7 +9,7 @@ from torchvision.transforms import Compose
 
 from dataset import PCXRayDataset, Normalize, ToTensor, split_dataset
 from densenet import DenseNet, add_dropout
-from hemis import JointConcatModel, Hemis, add_dropout_hemis
+from hemis import JointConcatModel, Hemis, add_dropout_hemis, MultiTaskModel
 
 from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_score
 import pandas as pd
@@ -17,7 +17,8 @@ import pickle
 
 
 def test(data_dir, csv_path, splits_path, output_dir, target='pa', batch_size=1, dropout=True, pretrained=False,
-         min_patients_per_label=100, seed=666, concat=False, merge_at=2):
+         min_patients_per_label=100, seed=666, merge_at=2, joint_model_type='hemis', 
+         combine_at='prepool', join_how='concat'):
     assert target in ['pa', 'l', 'joint']
 
     torch.manual_seed(seed)
@@ -53,8 +54,11 @@ def test(data_dir, csv_path, splits_path, output_dir, target='pa', batch_size=1,
         in_channels = 2 if target == 'joint' else 1
     
     if target == 'joint':
-        if concat:
+        if joint_model_type == 'concat':
             model = JointConcatModel(num_classes=testset.nb_labels, in_channels=1)
+        elif joint_model_type == 'multitask':
+            model = MultiTaskModel(num_classes=testset.nb_labels, in_channels=1,
+                                   combine_at=combine_at, join_how=join_how)
         else:
             model = Hemis(num_classes=testset.nb_labels, in_channels=1, merge_at=merge_at)
     else:
@@ -130,9 +134,14 @@ if __name__ == "__main__":
     parser.add_argument('--pretrained', type=bool, default=False)
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--min_patients', type=int, default=50)
+    parser.add_argument('--jointmodel', type=str, default='hemis')
+    parser.add_argument('--mt-combine-at', dest='combine', type=str, default='prepool')
+    parser.add_argument('--mt-join', dest='join', type=str, default='concat')
     args = parser.parse_args()
     print(args)
 
     test(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
          batch_size=args.batch_size, pretrained=args.pretrained, 
-         min_patients_per_label=args.min_patients,  seed=args.seed)
+         min_patients_per_label=args.min_patients,  seed=args.seed,joint_model_type=args.jointmodel,
+         combine_at=args.combine, join_how=args.join, merge_at=args.merged)
+
