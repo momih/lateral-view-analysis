@@ -93,6 +93,9 @@ def test(data_dir, csv_path, splits_path, output_dir, target='pa', batch_size=1,
 
         # Forward
         output = model(input)
+        if joint_model_type == 'multitask':
+            output = output[0]
+
         output = torch.sigmoid(output)
 
         # Save predictions
