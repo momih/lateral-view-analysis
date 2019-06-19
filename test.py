@@ -16,7 +16,7 @@ import pandas as pd
 import pickle
 
 
-def test(data_dir, csv_path, splits_path, output_dir, target='pa', batch_size=1, dropout=True, pretrained=False,
+def test(data_dir, csv_path, splits_path, output_dir, target='pa', batch_size=1, dropout=0.0, pretrained=False,
          min_patients_per_label=100, seed=666, merge_at=2, joint_model_type='hemis', 
          combine_at='prepool', join_how='concat'):
     assert target in ['pa', 'l', 'joint']
