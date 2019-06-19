@@ -133,6 +133,8 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--pretrained', type=bool, default=False)
     parser.add_argument('--seed', type=int, default=1)
+    parser.add_argument('--merge', type=int, default=3)
+
     parser.add_argument('--min_patients', type=int, default=50)
     parser.add_argument('--jointmodel', type=str, default='hemis')
     parser.add_argument('--mt-combine-at', dest='combine', type=str, default='prepool')
@@ -143,5 +145,5 @@ if __name__ == "__main__":
     test(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
          batch_size=args.batch_size, pretrained=args.pretrained, 
          min_patients_per_label=args.min_patients,  seed=args.seed,joint_model_type=args.jointmodel,
-         combine_at=args.combine, join_how=args.join, merge_at=args.merged)
+         combine_at=args.combine, join_how=args.join, merge_at=args.merge)
 
