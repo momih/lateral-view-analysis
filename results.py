@@ -176,7 +176,7 @@ def plot_per_label_diff(results_dir, labels_list, seed_list, nb_patients):
     l_patch = mpatches.Patch(color='r', label='L')
     ind_patch = mpatches.Patch(color='m', label='Indifferent')
 
-    fig = plt.figure(figsize=(15, 8))
+    fig = plt.figure(figsize=(36, 12), dpi=220)
     ax1 = fig.add_subplot(121)
     ax2 = fig.add_subplot(122)
 
@@ -194,12 +194,14 @@ def plot_per_label_diff(results_dir, labels_list, seed_list, nb_patients):
     ax2.errorbar(x=df[~condition]['Area under curve'], y=np.arange(len(df[~condition])),
                  xerr=df[~condition]['std'], fmt='none', c='k', capsize=3)
 
-    ax2.legend(handles=[pa_patch, l_patch, ind_patch], ncol=2, loc="lower right", frameon=True)
+    ax2.legend(handles=[pa_patch, l_patch, ind_patch], ncol=2, loc="lower right", frameon=True, fontsize=24)
     ax1.set(ylabel="", xlabel="")
     ax2.set(ylabel="", xlabel="")
-    fig.suptitle('Best AUC for each label ({} patients)'.format(nb_patients), fontsize=16)
+    fig.suptitle('Best AUC for each label ({} patients)'.format(nb_patients), fontsize=28)
     ax1.set_xlim((0.5, 1.))
     ax2.set_xlim((0.5, 1.))
+    ax1.tick_params(labelsize=20)
+    ax2.tick_params(labelsize=20)
     # ax.set_ylim((-1, len(labels_list)))
     sns.despine(left=True, bottom=True)
     plt.tight_layout()
