@@ -23,7 +23,8 @@ import pandas as pd
 
 def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100, learning_rate=1e-4, batch_size=1,
           dropout=None, pretrained=False, min_patients_per_label=50, seed=666, data_augmentation=True,
-          joint_model_type='hemis', merge_at=2, combine_at='prepool', join_how='concat', loss_wts=None):
+          joint_model_type='hemis', merge_at=2, combine_at='prepool', join_how='concat', loss_wts=None,
+          vote_at_test=False):
     assert target in ['pa', 'l', 'joint']
 
     torch.manual_seed(seed)
@@ -227,7 +228,10 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
             # Forward
             output = model(input)
             if joint_model_type == 'multitask':
-                output = output[0]
+                if not vote_at_test:
+                    output = output[0]
+                else:
+                    output = torch.stack(output, dim=1).mean(dim=1)
             running_loss += criterion(output, label).mean().data
 
             output = torch.sigmoid(output)

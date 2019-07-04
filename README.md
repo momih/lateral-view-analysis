@@ -7,3 +7,7 @@ This repo contains the code for:
 - A [HeMis](https://arxiv.org/abs/1607.05194) implementation.
 - A data loader for the [PadChest](https://arxiv.org/abs/1901.07441) dataset.
 - The training and testing routine for the models.
+
+
+![Poster](MIDLPoster.png)
+

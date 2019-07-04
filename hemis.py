@@ -175,16 +175,19 @@ class MultiTaskModel(nn.Module):
         params = {'in_channels': 1, 'num_classes': num_classes, **kwargs}
         self.frontal_model = densenet121(**params)
         self.lateral_model = densenet121(**params)
-
-        self.joint_in_features = self.frontal_model.classifier.in_features * 2
+        self.joint_in_features = self.frontal_model.classifier.in_features
+        
+        if join_how ==  'concat':
+            self.joint_in_features *= 2
         self.joint_classifier = nn.Linear(in_features=self.joint_in_features, out_features=num_classes)
 
     def _combine_tensors(self, list_of_features):
         if self.join_how == 'concat':
             combined = torch.cat(list_of_features, dim=1)
-        else:  # Use statistics
-            stacked = torch.stack(list_of_features, dim=1)
-            combined = torch.cat([torch.mean(stacked, dim=1), torch.var(stacked, dim=1)], dim=1)
+        elif self.join_how == 'max':
+            combined = torch.max(torch.stack(list_of_features, dim=1), dim=1)[0]
+        else:  # average
+            combined = torch.mean(torch.stack(list_of_features, dim=1), dim=1)
         return combined
 
     def forward(self, images):
@@ -206,7 +209,6 @@ class MultiTaskModel(nn.Module):
                 _feats = F.adaptive_avg_pool2d(_feats, (1, 1)).view(_feats.size(0), -1)
                 pooled.append(_feats)
             joint = self._combine_tensors(pooled)
-
         joint_logit = self.joint_classifier(joint)
 
         frontal_features = F.relu(frontal_features, inplace=True)
@@ -214,7 +216,7 @@ class MultiTaskModel(nn.Module):
         frontal_logit = self.frontal_model.classifier(frontal_features)
 
         lateral_features = F.relu(lateral_features, inplace=True)
-        lateral_features = F.avg_pool2d(lateral_features, kernel_size=7, stride=1).view(lateral_features.size(0), -1)
+        lateral_features = F.adaptive_avg_pool2d(lateral_features,(1, 1)).view(lateral_features.size(0), -1)
         lateral_logit = self.lateral_model.classifier(lateral_features)
 
         return joint_logit, frontal_logit, lateral_logit
