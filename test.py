@@ -16,7 +16,7 @@ import pandas as pd
 import pickle
 from tqdm import tqdm
 
-def test(data_dir, csv_path, splits_path, output_dir, target='pa', batch_size=1, dropout=0.0, pretrained=False,
+def test(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='pa', batch_size=1, dropout=0.0, pretrained=False,
          min_patients_per_label=100, seed=666, merge_at=2, joint_model_type='hemis', 
          combine_at='prepool', join_how='concat'):
     assert target in ['pa', 'l', 'joint']
@@ -25,7 +25,7 @@ def test(data_dir, csv_path, splits_path, output_dir, target='pa', batch_size=1,
     np.random.seed(seed)
 
     output_dir = output_dir.format(seed)
-    output_dir = join('./logs', output_dir)
+    output_dir = join(logdir, output_dir)
 
     splits_path = splits_path.format(seed)
 
@@ -132,6 +132,7 @@ if __name__ == "__main__":
     parser.add_argument('csv_path', type=str)
     parser.add_argument('splits_path', type=str)
     parser.add_argument('output_dir', type=str)
+    parser.add_argument('--logdir', type=str, default='./logs')
     parser.add_argument('--target', type=str, default='pa')
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--pretrained', type=bool, default=False)
@@ -146,7 +147,7 @@ if __name__ == "__main__":
     print(args)
 
     test(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
-         batch_size=args.batch_size, pretrained=args.pretrained, 
+         logdir=args.logdir, batch_size=args.batch_size, pretrained=args.pretrained, 
          min_patients_per_label=args.min_patients,  seed=args.seed,joint_model_type=args.jointmodel,
          combine_at=args.combine, join_how=args.join, merge_at=args.merge)
 

@@ -21,7 +21,7 @@ from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_sco
 import pandas as pd
 
 
-def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100, learning_rate=1e-4, batch_size=1,
+def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='pa', nb_epoch=100, learning_rate=1e-4, batch_size=1,
           dropout=None, pretrained=False, min_patients_per_label=50, seed=666, data_augmentation=True,
           joint_model_type='hemis', merge_at=2, combine_at='prepool', join_how='concat', loss_wts=None,
           vote_at_test=False):
@@ -31,7 +31,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     np.random.seed(seed)
 
     output_dir = output_dir.format(seed)
-    output_dir = join('./logs', output_dir)
+    output_dir = join(logdir, output_dir)
     splits_path = splits_path.format(seed)
 
     print("Training mode: {}".format(target))
@@ -294,6 +294,7 @@ if __name__ == "__main__":
     parser.add_argument('splits_path', type=str)
     parser.add_argument('output_dir', type=str)
     parser.add_argument('--target', type=str, default='pa')
+    parser.add_argument('--logdir', type=str, default='./logs')
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--pretrained', type=bool, default=False)
@@ -311,8 +312,8 @@ if __name__ == "__main__":
     np.set_printoptions(suppress=True, precision=4)
     multitask_loss_weights = [float(x) for x in args.loss_weights.split(",")]
     print(args)
-    train(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
-          batch_size=args.batch_size, nb_epoch=args.epochs, pretrained=args.pretrained,
+    train(args.data_dir, args.csv_path, args.splits_path, args.output_dir, logdir=args.logdir,
+          target=args.target, batch_size=args.batch_size, nb_epoch=args.epochs, pretrained=args.pretrained,
           learning_rate=args.learning_rate, min_patients_per_label=args.min_patients,
           dropout=args.dropout, seed=args.seed, joint_model_type=args.jointmodel,
           combine_at=args.combine, join_how=args.join, merge_at=args.merge, loss_wts=multitask_loss_weights)
