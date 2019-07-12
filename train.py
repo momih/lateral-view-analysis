@@ -295,6 +295,7 @@ if __name__ == "__main__":
     parser.add_argument('output_dir', type=str)
     parser.add_argument('--target', type=str, default='pa')
     parser.add_argument('--batch_size', type=int, default=1)
+    parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--pretrained', type=bool, default=False)
     parser.add_argument('--learning_rate', type=float, default=0.0001)
     parser.add_argument('--dropout', type=float, default=0.2)
@@ -311,6 +312,7 @@ if __name__ == "__main__":
     multitask_loss_weights = [float(x) for x in args.loss_weights.split(",")]
     print(args)
     train(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
-          batch_size=args.batch_size, pretrained=args.pretrained, learning_rate=args.learning_rate,
-          min_patients_per_label=args.min_patients, dropout=args.dropout, seed=args.seed, joint_model_type=args.jointmodel,
+          batch_size=args.batch_size, nb_epoch=args.epochs, pretrained=args.pretrained,
+          learning_rate=args.learning_rate, min_patients_per_label=args.min_patients,
+          dropout=args.dropout, seed=args.seed, joint_model_type=args.jointmodel,
           combine_at=args.combine, join_how=args.join, merge_at=args.merge, loss_wts=multitask_loss_weights)
