@@ -1,5 +1,6 @@
 misc/
 data/
+results/
 .spyproject/
 .ipynb_checkpoints
 .idea/

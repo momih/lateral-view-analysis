@@ -165,7 +165,8 @@ class JointConcatModel(Hemis):
 
 
 class MultiTaskModel(nn.Module):
-    def __init__(self, num_classes=10, combine_at='prepool', join_how='concat', drop_view_prob=(0.5, 0.25, 0.25), **kwargs):
+    def __init__(self, num_classes=10, combine_at='prepool', join_how='concat',
+                 drop_view_prob=(0.5, 0.25, 0.25), **kwargs):
         super(MultiTaskModel, self).__init__()
 
         self.drop_view_prob = drop_view_prob
@@ -177,7 +178,7 @@ class MultiTaskModel(nn.Module):
         self.lateral_model = densenet121(**params)
         self.joint_in_features = self.frontal_model.classifier.in_features
         
-        if join_how ==  'concat':
+        if join_how == 'concat':
             self.joint_in_features *= 2
         self.joint_classifier = nn.Linear(in_features=self.joint_in_features, out_features=num_classes)
 
@@ -216,7 +217,7 @@ class MultiTaskModel(nn.Module):
         frontal_logit = self.frontal_model.classifier(frontal_features)
 
         lateral_features = F.relu(lateral_features, inplace=True)
-        lateral_features = F.adaptive_avg_pool2d(lateral_features,(1, 1)).view(lateral_features.size(0), -1)
+        lateral_features = F.adaptive_avg_pool2d(lateral_features, (1, 1)).view(lateral_features.size(0), -1)
         lateral_logit = self.lateral_model.classifier(lateral_features)
 
         return joint_logit, frontal_logit, lateral_logit
