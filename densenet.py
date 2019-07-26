@@ -12,6 +12,18 @@ model_urls = {
 }
 
 
+def get_densenet_params(config):
+    if config == 'densenet161':
+        ret =  dict(growth_rate=48, block_config=(6, 12, 36, 24), num_init_features=96)
+    elif config == 'densenet169':
+        ret =  dict(growth_rate=32, block_config=(6, 12, 32, 32), num_init_features=64)
+    elif config == 'densenet201':
+        ret =  dict(growth_rate=32, block_config=(6, 12, 48, 32), num_init_features=64)
+    else:
+        # default configuration: densenet121
+        ret = dict(growth_rate=32, block_config=(6, 12, 24, 16), num_init_features=64)
+    return ret
+
 def average_cross_entropy(output, label):
     """
     :param output: Tensor of shape batchSize x Nclasses

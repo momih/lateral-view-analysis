@@ -7,7 +7,6 @@ import torch.nn.functional as F
 
 from densenet import densenet121, add_dropout_rec, _DenseBlock, _Transition
 
-
 def add_dropout_hemis(net, list_modules=('branches', 'combined'), p=0.1):
     for x in list_modules:
         module = net._modules[x]
@@ -206,7 +205,7 @@ class MultiTaskModel(nn.Module):
             # Combine after pooling
             pooled = []
             for view in [frontal_features, lateral_features]:
-                _feats = F.relu(view, inplace=True)
+                _feats = F.relu(view, inplace=False)
                 _feats = F.adaptive_avg_pool2d(_feats, (1, 1)).view(_feats.size(0), -1)
                 pooled.append(_feats)
             joint = self._combine_tensors(pooled)

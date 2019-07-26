@@ -14,7 +14,7 @@ from torch import nn
 from torchvision.transforms import Compose
 
 from dataset import PCXRayDataset, Normalize, ToTensor, RandomRotation, GaussianNoise, ToPILImage, split_dataset
-from densenet import DenseNet, add_dropout
+from densenet import DenseNet, add_dropout, get_densenet_params
 from hemis import Hemis, add_dropout_hemis, JointConcatModel, MultiTaskModel
 
 from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_score
@@ -24,7 +24,7 @@ import pandas as pd
 def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='pa', nb_epoch=100, learning_rate=1e-4, batch_size=1,
           dropout=None, pretrained=False, min_patients_per_label=50, seed=666, data_augmentation=True,
           joint_model_type='hemis', merge_at=2, combine_at='prepool', join_how='concat', loss_wts=None,
-          vote_at_test=False):
+          vote_at_test=False, densenet_config='densenet121'):
     assert target in ['pa', 'l', 'joint']
 
     torch.manual_seed(seed)
@@ -81,7 +81,8 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
         else:
             model = Hemis(num_classes=trainset.nb_labels, in_channels=1, merge_at=merge_at)
     else:
-        model = DenseNet(num_classes=trainset.nb_labels, in_channels=in_channels)
+        densenet_params = get_densenet_params(densenet_config)
+        model = DenseNet(num_classes=trainset.nb_labels, in_channels=in_channels, **densenet_params)
 
     # Add dropout
     if dropout:
@@ -295,6 +296,8 @@ if __name__ == "__main__":
     parser.add_argument('output_dir', type=str)
     parser.add_argument('--target', type=str, default='pa')
     parser.add_argument('--logdir', type=str, default='./logs')
+    parser.add_argument('--densenet_config', type=str, default='densenet121')
+
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--pretrained', type=bool, default=False)
@@ -316,4 +319,5 @@ if __name__ == "__main__":
           target=args.target, batch_size=args.batch_size, nb_epoch=args.epochs, pretrained=args.pretrained,
           learning_rate=args.learning_rate, min_patients_per_label=args.min_patients,
           dropout=args.dropout, seed=args.seed, joint_model_type=args.jointmodel,
-          combine_at=args.combine, join_how=args.join, merge_at=args.merge, loss_wts=multitask_loss_weights)
+          combine_at=args.combine, join_how=args.join, merge_at=args.merge, 
+          loss_wts=multitask_loss_weights, densenet_config=args.densenet_config)
