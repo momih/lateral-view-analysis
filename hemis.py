@@ -211,11 +211,11 @@ class MultiTaskModel(nn.Module):
             joint = self._combine_tensors(pooled)
         joint_logit = self.joint_classifier(joint)
 
-        frontal_features = F.relu(frontal_features, inplace=True)
+        frontal_features = F.relu(frontal_features, inplace=False)
         frontal_features = F.adaptive_avg_pool2d(frontal_features, (1, 1)).view(frontal_features.size(0), -1)
         frontal_logit = self.frontal_model.classifier(frontal_features)
 
-        lateral_features = F.relu(lateral_features, inplace=True)
+        lateral_features = F.relu(lateral_features, inplace=False)
         lateral_features = F.adaptive_avg_pool2d(lateral_features, (1, 1)).view(lateral_features.size(0), -1)
         lateral_logit = self.lateral_model.classifier(lateral_features)
 
