@@ -1,11 +1,11 @@
 import re
+from collections import OrderedDict
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.model_zoo as model_zoo
-from collections import OrderedDict
 from torch.nn.modules.linear import Linear
-
 
 model_urls = {
     'densenet121': 'https://download.pytorch.org/models/densenet121-a639ec97.pth'
@@ -14,15 +14,16 @@ model_urls = {
 
 def get_densenet_params(config):
     if config == 'densenet161':
-        ret =  dict(growth_rate=48, block_config=(6, 12, 36, 24), num_init_features=96)
+        ret = dict(growth_rate=48, block_config=(6, 12, 36, 24), num_init_features=96)
     elif config == 'densenet169':
-        ret =  dict(growth_rate=32, block_config=(6, 12, 32, 32), num_init_features=64)
+        ret = dict(growth_rate=32, block_config=(6, 12, 32, 32), num_init_features=64)
     elif config == 'densenet201':
-        ret =  dict(growth_rate=32, block_config=(6, 12, 48, 32), num_init_features=64)
+        ret = dict(growth_rate=32, block_config=(6, 12, 48, 32), num_init_features=64)
     else:
         # default configuration: densenet121
         ret = dict(growth_rate=32, block_config=(6, 12, 24, 16), num_init_features=64)
     return ret
+
 
 def average_cross_entropy(output, label):
     """
@@ -62,6 +63,7 @@ class DenseNetWithClassif(nn.Module):
     """
     see https://github.com/pytorch/vision/blob/master/torchvision/models/densenet.py
     """
+
     def __init__(self, out_features=14, in_features=1024, **kwargs):
         super(DenseNetWithClassif, self).__init__()
         net = densenet121(**kwargs)
@@ -81,7 +83,6 @@ class DenseNetWithClassif(nn.Module):
         out = self.classifier(out)
         activations.append(out)
         return activations
-
 
 def densenet121(pretrained=False, **kwargs):
     r"""Densenet-121 model from
@@ -116,11 +117,11 @@ class _DenseLayer(nn.Sequential):
         self.add_module('norm1', nn.BatchNorm2d(num_input_features)),
         self.add_module('relu1', nn.ReLU(inplace=True)),
         self.add_module('conv1', nn.Conv2d(num_input_features, bn_size *
-                        growth_rate, kernel_size=1, stride=1, bias=False)),
+                                           growth_rate, kernel_size=1, stride=1, bias=False)),
         self.add_module('norm2', nn.BatchNorm2d(bn_size * growth_rate)),
         self.add_module('relu2', nn.ReLU(inplace=True)),
         self.add_module('conv2', nn.Conv2d(bn_size * growth_rate, growth_rate,
-                        kernel_size=3, stride=1, padding=1, bias=False)),
+                                           kernel_size=3, stride=1, padding=1, bias=False)),
         self.drop_rate = drop_rate
 
     def forward(self, x):
@@ -147,7 +148,6 @@ class _Transition(nn.Sequential):
                                           kernel_size=1, stride=1, bias=False))
         self.add_module('pool', nn.AvgPool2d(kernel_size=2, stride=2))
 
-
 class DenseNet(nn.Module):
     r"""Densenet-BC model class, based on
     `"Densely Connected Convolutional Networks" <https://arxiv.org/pdf/1608.06993.pdf>`_
@@ -161,6 +161,7 @@ class DenseNet(nn.Module):
         drop_rate (float) - dropout rate after each dense layer
         num_classes (int) - number of classification classes
     """
+
     def __init__(self, growth_rate=32, block_config=(6, 12, 24, 16),
                  num_init_features=64, bn_size=4, drop_rate=0, num_classes=1000, in_channels=3):
 

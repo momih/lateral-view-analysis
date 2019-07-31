@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from densenet import densenet121, add_dropout_rec, _DenseBlock, _Transition
+from models.densenet import densenet121, add_dropout_rec, _DenseBlock, _Transition
 
 
 def add_dropout_hemis(net, list_modules=('branches', 'combined'), p=0.1):
