@@ -5,7 +5,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.model_zoo as model_zoo
-from torch.nn.modules.linear import Linear
 
 model_urls = {
     'densenet121': 'https://download.pytorch.org/models/densenet121-a639ec97.pth'
@@ -25,22 +24,6 @@ def get_densenet_params(config):
     return ret
 
 
-def average_cross_entropy(output, label):
-    """
-    :param output: Tensor of shape batchSize x Nclasses
-    :param label: Tensor of shape batchSize x Nclasses
-    :return: Sum of the per class entropies
-    """
-    loss = torch.zeros(1, requires_grad=False)
-    if torch.cuda.is_available():
-        loss = loss.cuda()
-
-    cross_entropy = F.binary_cross_entropy
-    for i in range(output.size()[1]):
-        loss += cross_entropy(output[:, i], label[:, i])
-
-    return loss
-
 
 def add_dropout_rec(module, p):
     if isinstance(module, nn.modules.conv.Conv2d) or isinstance(module, nn.modules.Linear):
@@ -57,58 +40,6 @@ def add_dropout(net, p=0.1):
             net.features._modules[name] = add_dropout_rec(net.features._modules[name], p=p)
     net.classifier = add_dropout_rec(net.classifier, p=p)
     return net
-
-
-class DenseNetWithClassif(nn.Module):
-    """
-    see https://github.com/pytorch/vision/blob/master/torchvision/models/densenet.py
-    """
-
-    def __init__(self, out_features=14, in_features=1024, **kwargs):
-        super(DenseNetWithClassif, self).__init__()
-        net = densenet121(**kwargs)
-        self.features = net.features
-        self.classifier = nn.Sequential(Linear(in_features=in_features, out_features=out_features), nn.Sigmoid())
-
-    def forward(self, x):
-        activations = []
-        for feat in self.features:
-            x = feat(x)
-            activations.append(x)
-
-        out = F.relu(x, inplace=True)
-        activations.append(out)
-        out = F.avg_pool2d(out, kernel_size=7, stride=1)
-        out = out.view(x.size(0), -1)
-        out = self.classifier(out)
-        activations.append(out)
-        return activations
-
-def densenet121(pretrained=False, **kwargs):
-    r"""Densenet-121 model from
-    `"Densely Connected Convolutional Networks" <https://arxiv.org/pdf/1608.06993.pdf>`_
-
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-    """
-    model = DenseNet(num_init_features=64, growth_rate=32, block_config=(6, 12, 24, 16),
-                     **kwargs)
-    if pretrained:
-        # '.'s are no longer allowed in module names, but pervious _DenseLayer
-        # has keys 'norm.1', 'relu.1', 'conv.1', 'norm.2', 'relu.2', 'conv.2'.
-        # They are also in the checkpoints in model_urls. This pattern is used
-        # to find such keys.
-        pattern = re.compile(
-            r'^(.*denselayer\d+\.(?:norm|relu|conv))\.((?:[12])\.(?:weight|bias|running_mean|running_var))$')
-        state_dict = model_zoo.load_url(model_urls['densenet121'])
-        for key in list(state_dict.keys()):
-            res = pattern.match(key)
-            if res:
-                new_key = res.group(1) + res.group(2)
-                state_dict[new_key] = state_dict[key]
-                del state_dict[key]
-        model.load_state_dict(state_dict)
-    return model
 
 
 class _DenseLayer(nn.Sequential):
@@ -151,6 +82,8 @@ class _Transition(nn.Sequential):
 class DenseNet(nn.Module):
     r"""Densenet-BC model class, based on
     `"Densely Connected Convolutional Networks" <https://arxiv.org/pdf/1608.06993.pdf>`_
+    
+    Modified from torchvision to have a variable number of input channels
 
     Args:
         growth_rate (int) - how many filters to add each layer (`k` in paper)

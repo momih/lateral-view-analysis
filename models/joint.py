@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models.densenet import densenet121, add_dropout_rec, _DenseBlock, _Transition
+from models.densenet import DenseNet, add_dropout_rec, _DenseBlock, _Transition, get_densenet_params
 
 
 def add_dropout_hemis(net, list_modules=('branches', 'combined'), p=0.1):
@@ -166,16 +166,16 @@ class JointConcatModel(Hemis):
 
 class MultiTaskModel(nn.Module):
     def __init__(self, num_classes=10, combine_at='prepool', join_how='concat',
-                 drop_view_prob=(0.5, 0.25, 0.25), **kwargs):
+                 drop_view_prob=(0.5, 0.25, 0.25), architecture='densenet121', **kwargs):
         super(MultiTaskModel, self).__init__()
 
         self.drop_view_prob = drop_view_prob
         self.combine_at = combine_at
         self.join_how = join_how
 
-        params = {'in_channels': 1, 'num_classes': num_classes, **kwargs}
-        self.frontal_model = densenet121(**params)
-        self.lateral_model = densenet121(**params)
+        params = {'in_channels': 1, 'num_classes': num_classes, **get_densenet_params(architecture)}
+        self.frontal_model = DenseNet(**params)
+        self.lateral_model = DenseNet(**params)
         self.joint_in_features = self.frontal_model.classifier.in_features
 
         if join_how == 'concat':
