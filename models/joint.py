@@ -7,6 +7,7 @@ import torch.nn.functional as F
 
 from densenet import densenet121, add_dropout_rec, _DenseBlock, _Transition
 
+
 def add_dropout_hemis(net, list_modules=('branches', 'combined'), p=0.1):
     for x in list_modules:
         module = net._modules[x]
@@ -176,7 +177,7 @@ class MultiTaskModel(nn.Module):
         self.frontal_model = densenet121(**params)
         self.lateral_model = densenet121(**params)
         self.joint_in_features = self.frontal_model.classifier.in_features
-        
+
         if join_how == 'concat':
             self.joint_in_features *= 2
         self.joint_classifier = nn.Linear(in_features=self.joint_in_features, out_features=num_classes)
@@ -211,11 +212,11 @@ class MultiTaskModel(nn.Module):
             joint = self._combine_tensors(pooled)
         joint_logit = self.joint_classifier(joint)
 
-        frontal_features = F.relu(frontal_features, inplace=False)
+        frontal_features = F.relu(frontal_features, inplace=self.combine_at == 'prepool')
         frontal_features = F.adaptive_avg_pool2d(frontal_features, (1, 1)).view(frontal_features.size(0), -1)
         frontal_logit = self.frontal_model.classifier(frontal_features)
 
-        lateral_features = F.relu(lateral_features, inplace=False)
+        lateral_features = F.relu(lateral_features, inplace=self.combine_at == 'prepool')
         lateral_features = F.adaptive_avg_pool2d(lateral_features, (1, 1)).view(lateral_features.size(0), -1)
         lateral_logit = self.lateral_model.classifier(lateral_features)
 

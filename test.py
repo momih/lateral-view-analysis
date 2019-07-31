@@ -8,8 +8,8 @@ from torch.utils.data import DataLoader
 from torchvision.transforms import Compose
 
 from dataset import PCXRayDataset, Normalize, ToTensor, split_dataset
-from densenet import DenseNet, add_dropout
-from hemis import JointConcatModel, Hemis, add_dropout_hemis, MultiTaskModel
+from models.densenet import DenseNet, add_dropout, get_densenet_params
+from models.joint import JointConcatModel, Hemis, add_dropout_hemis, MultiTaskModel
 
 from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_score
 import pandas as pd
@@ -18,7 +18,7 @@ from tqdm import tqdm
 
 def test(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='pa', batch_size=1, dropout=0.0, pretrained=False,
          min_patients_per_label=100, seed=666, merge_at=2, joint_model_type='hemis', 
-         combine_at='prepool', join_how='concat'):
+         combine_at='prepool', join_how='concat', densenet_config='densenet121'):
     assert target in ['pa', 'l', 'joint']
 
     torch.manual_seed(seed)
@@ -62,7 +62,8 @@ def test(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='p
         else:
             model = Hemis(num_classes=testset.nb_labels, in_channels=1, merge_at=merge_at)
     else:
-        model = DenseNet(num_classes=testset.nb_labels, in_channels=in_channels)
+        densenet_params = get_densenet_params(densenet_config)
+        model = DenseNet(num_classes=testset.nb_labels, in_channels=in_channels, **densenet_params)
 
     # Add dropout
     if dropout:
@@ -138,6 +139,7 @@ if __name__ == "__main__":
     parser.add_argument('--pretrained', type=bool, default=False)
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--merge', type=int, default=3)
+    parser.add_argument('--densenet_config', type=str, default='densenet121')
 
     parser.add_argument('--min_patients', type=int, default=50)
     parser.add_argument('--jointmodel', type=str, default='hemis')
@@ -148,6 +150,7 @@ if __name__ == "__main__":
 
     test(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
          logdir=args.logdir, batch_size=args.batch_size, pretrained=args.pretrained, 
-         min_patients_per_label=args.min_patients,  seed=args.seed,joint_model_type=args.jointmodel,
-         combine_at=args.combine, join_how=args.join, merge_at=args.merge)
+         min_patients_per_label=args.min_patients,  seed=args.seed,
+         joint_model_type=args.jointmodel, combine_at=args.combine, join_how=args.join, 
+         merge_at=args.merge, densenet_config=args.densenet_config)
 
