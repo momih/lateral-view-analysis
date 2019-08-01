@@ -5,39 +5,20 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models.densenet import DenseNet, add_dropout_rec, _DenseBlock, _Transition, get_densenet_params
+from models.densenet import DenseNet, _DenseBlock, _Transition, get_densenet_params
 
 
-def add_dropout_hemis(net, list_modules=('branches', 'combined'), p=0.1):
-    for x in list_modules:
-        module = net._modules[x]
-        for name in module._modules.keys():
-            if name != "conv0":
-                module._modules[name] = add_dropout_rec(module._modules[name], p=p)
-    net.classifier = add_dropout_rec(net.classifier, p=p)
-    return net
-
-
-class Hemis(nn.Module):
-    r"""Densenet-BC model class, based on
-    `"Densely Connected Convolutional Networks" <https://arxiv.org/pdf/1608.06993.pdf>`_
-
-    Args:
-        growth_rate (int) - how many filters to add each layer (`k` in paper)
-        block_config (list of 4 ints) - how many layers in each pooling block
-        num_init_features (int) - the number of filters to learn in the first convolution layer
-        bn_size (int) - multiplicative factor for number of bottle neck layers
-          (i.e. bn_size * k features in the bottleneck layer)
-        drop_rate (float) - dropout rate after each dense layer
-        num_classes (int) - number of classification classes
+class HeMIS(nn.Module):
+    r"""
+    HeMIS implemented with DenseNet blocks
     """
 
     def __init__(self, growth_rate=32, block_config=(6, 12, 24, 16), merge_at=2,
                  n_views=2, branch_names=None, num_init_features=64, bn_size=4,
                  drop_rate=0, num_classes=15, in_channels=1,
-                 drop_view_prob=(0.5, 0.25, 0.25), concat=False):
+                 drop_view_prob=0.25, concat=False):
 
-        super(Hemis, self).__init__()
+        super(HeMIS, self).__init__()
 
         self.branch_names = branch_names
         self.growth_rate = growth_rate
@@ -53,7 +34,7 @@ class Hemis(nn.Module):
         merged = block_config[merge_at:]
 
         self.branches = nn.ModuleDict()
-        self.drop_view_prob = drop_view_prob
+        self.drop_view_prob = [1 - drop_view_prob, drop_view_prob/2., drop_view_prob/2.]
         self.concat = concat
 
         for view in range(n_views):
@@ -150,9 +131,9 @@ class Hemis(nn.Module):
         return out
 
 
-class JointConcatModel(Hemis):
+class HeMISConcat(HeMIS):
     def __init__(self, **kwargs):
-        super(JointConcatModel, self).__init__(**kwargs)
+        super(HeMISConcat, self).__init__(**kwargs)
 
     def forward(self, images):
         features = self._propagate_modalities(images)
@@ -164,12 +145,12 @@ class JointConcatModel(Hemis):
         return out
 
 
-class MultiTaskModel(nn.Module):
+class FrontalLateralMultiTask(nn.Module):
     def __init__(self, num_classes=10, combine_at='prepool', join_how='concat',
-                 drop_view_prob=(0.5, 0.25, 0.25), architecture='densenet121', **kwargs):
-        super(MultiTaskModel, self).__init__()
+                 drop_view_prob=0.0, architecture='densenet121'):
+        super(FrontalLateralMultiTask, self).__init__()
 
-        self.drop_view_prob = drop_view_prob
+        self.drop_view_prob = [1 - drop_view_prob, drop_view_prob/2., drop_view_prob/2.]
         self.combine_at = combine_at
         self.join_how = join_how
 
@@ -180,44 +161,55 @@ class MultiTaskModel(nn.Module):
 
         if join_how == 'concat':
             self.joint_in_features *= 2
-        self.joint_classifier = nn.Linear(in_features=self.joint_in_features, out_features=num_classes)
+        self.classifier = nn.Linear(in_features=self.joint_in_features, out_features=num_classes)
 
-    def _combine_tensors(self, list_of_features):
-        if self.join_how == 'concat':
-            combined = torch.cat(list_of_features, dim=1)
-        elif self.join_how == 'max':
+    def _combine_tensors(self, list_of_features, random_drop=1):
+        if self.join_how == 'mean' and random_drop == 1: # average
+            combined = torch.mean(torch.stack(list_of_features, dim=1), dim=1)
+        elif self.join_how == 'max' and random_drop == 1:
             combined = torch.max(torch.stack(list_of_features, dim=1), dim=1)[0]
         else:  # average
-            combined = torch.mean(torch.stack(list_of_features, dim=1), dim=1)
+            combined = torch.cat(list_of_features, dim=1)
         return combined
 
+    def _pool(self, x):
+        x = F.relu(x)
+        x = F.adaptive_avg_pool2d(x, output_size=(1, 1))
+        x = x.view(x.size(0), -1)
+        return x
+
     def forward(self, images):
-        frontal_img, lateral_img = images
+        # Randomly drop a view while training
+        select = np.random.choice([1, 2, 3], p=self.drop_view_prob)
+        if select == 2 and self.training: # Frontal only
+            frontal_img = images[0]
+            lateral_img = torch.zeros_like(images[1])
+        elif select == 3 and self.training: # Lateral only
+            frontal_img = torch.zeros_like(images[0])
+            lateral_img = images[1]
+        else: # Keep both views
+            frontal_img, lateral_img = images
 
         frontal_features = self.frontal_model.features(frontal_img)
         lateral_features = self.lateral_model.features(lateral_img)
 
         # Joint view
         if self.combine_at == 'prepool':
-            joint = self._combine_tensors([frontal_features, lateral_features])
-            joint = F.relu(joint, inplace=True)
-            joint = F.adaptive_avg_pool2d(joint, (1, 1)).view(joint.size(0), -1)
+            joint = self._combine_tensors([frontal_features, lateral_features], random_drop=select)
+            joint = self._pool(joint)
         else:
             # Combine after pooling
             pooled = []
             for view in [frontal_features, lateral_features]:
-                _feats = F.relu(view, inplace=False)
-                _feats = F.adaptive_avg_pool2d(_feats, (1, 1)).view(_feats.size(0), -1)
-                pooled.append(_feats)
+                pooled.append(self._pool(view))
             joint = self._combine_tensors(pooled)
-        joint_logit = self.joint_classifier(joint)
 
-        frontal_features = F.relu(frontal_features, inplace=self.combine_at == 'prepool')
-        frontal_features = F.adaptive_avg_pool2d(frontal_features, (1, 1)).view(frontal_features.size(0), -1)
-        frontal_logit = self.frontal_model.classifier(frontal_features)
+        joint_logit = self.classifier(joint)
 
-        lateral_features = F.relu(lateral_features, inplace=self.combine_at == 'prepool')
-        lateral_features = F.adaptive_avg_pool2d(lateral_features, (1, 1)).view(lateral_features.size(0), -1)
-        lateral_logit = self.lateral_model.classifier(lateral_features)
+        pooled_frontal_features = self._pool(frontal_features)
+        frontal_logit = self.frontal_model.classifier(pooled_frontal_features)
+
+        pooled_lateral_features = self._pool(lateral_features)
+        lateral_logit = self.lateral_model.classifier(pooled_lateral_features)
 
         return joint_logit, frontal_logit, lateral_logit
