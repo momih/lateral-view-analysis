@@ -15,8 +15,8 @@ from torch.utils.data import DataLoader
 from torchvision.transforms import Compose
 
 from dataset import PCXRayDataset, Normalize, ToTensor, RandomRotation, GaussianNoise, ToPILImage, split_dataset
-from models import DenseNet, HeMIS, HeMISConcat, FrontalLateralMultiTask
-from models import add_dropout, get_densenet_params
+from models import DenseNet, HeMIS, HeMISConcat, FrontalLateralMultiTask, ResNet
+from models import add_dropout, get_densenet_params, get_resnet_params
 
 
 def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='pa',
@@ -78,9 +78,15 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
             model = HeMIS(num_classes=trainset.nb_labels, in_channels=1, merge_at=other_args.merge,
                           drop_view_prob=other_args.drop_view_prob)
     else:
-        densenet_params = get_densenet_params(architecture)
-        model = DenseNet(num_classes=trainset.nb_labels, in_channels=in_channels, **densenet_params)
-        model_type = 'densenet'
+        if 'resnet' in architecture:
+            modelparams = get_resnet_params(architecture)
+            model = ResNet(num_classes=trainset.nb_labels, in_channels=in_channels, **modelparams)
+            model_type = 'resnet'
+        else:
+            # Use DenseNet by default
+            modelparams = get_densenet_params(architecture)
+            model = DenseNet(num_classes=trainset.nb_labels, in_channels=in_channels, **modelparams)
+            model_type = 'densenet'
 
     # Add dropout
     if dropout:

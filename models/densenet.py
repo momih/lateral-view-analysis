@@ -4,41 +4,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-model_urls = {
-    'densenet121': 'https://download.pytorch.org/models/densenet121-a639ec97.pth'
-}
-
-
-def get_densenet_params(config):
-    if config == 'densenet161':
-        ret = dict(growth_rate=48, block_config=(6, 12, 36, 24), num_init_features=96)
-    elif config == 'densenet169':
-        ret = dict(growth_rate=32, block_config=(6, 12, 32, 32), num_init_features=64)
-    elif config == 'densenet201':
-        ret = dict(growth_rate=32, block_config=(6, 12, 48, 32), num_init_features=64)
-    else:
-        # default configuration: densenet121
-        ret = dict(growth_rate=32, block_config=(6, 12, 24, 16), num_init_features=64)
-    return ret
-
-
-def add_dropout_rec(module, p):
-    if isinstance(module, nn.modules.conv.Conv2d) or isinstance(module, nn.modules.Linear):
-        return nn.Sequential(module, nn.Dropout(p))
-    for name in module._modules.keys():
-        module._modules[name] = add_dropout_rec(module._modules[name], p=p)
-
-    return module
-
-
-def add_dropout(net, p=0.1):
-    for name in net.features._modules.keys():
-        if name != "conv0":
-            net.features._modules[name] = add_dropout_rec(net.features._modules[name], p=p)
-    net.classifier = add_dropout_rec(net.classifier, p=p)
-    return net
-
-
 class _DenseLayer(nn.Sequential):
     def __init__(self, num_input_features, growth_rate, bn_size, drop_rate):
         super(_DenseLayer, self).__init__()
@@ -141,6 +106,18 @@ class DenseNet(nn.Module):
         out = self.classifier(out)
         return out
 
+def get_densenet_params(arch):
+    assert 'dense' in arch
+    if arch == 'densenet161':
+        ret = dict(growth_rate=48, block_config=(6, 12, 36, 24), num_init_features=96)
+    elif arch == 'densenet169':
+        ret = dict(growth_rate=32, block_config=(6, 12, 32, 32), num_init_features=64)
+    elif arch == 'densenet201':
+        ret = dict(growth_rate=32, block_config=(6, 12, 48, 32), num_init_features=64)
+    else:
+        # default configuration: densenet121
+        ret = dict(growth_rate=32, block_config=(6, 12, 24, 16), num_init_features=64)
+    return ret
 
 if __name__ == "__main__":
     pass

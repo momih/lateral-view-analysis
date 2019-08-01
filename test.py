@@ -11,8 +11,9 @@ from torchvision.transforms import Compose
 from tqdm import tqdm
 
 from dataset import PCXRayDataset, Normalize, ToTensor, split_dataset
-from models import DenseNet, HeMIS, HeMISConcat, FrontalLateralMultiTask
-from models import get_densenet_params
+from models import DenseNet, HeMIS, HeMISConcat, FrontalLateralMultiTask, ResNet
+from models import get_densenet_params, get_resnet_params
+
 
 def test(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='pa',
          batch_size=1, pretrained=False, min_patients_per_label=100, seed=666,
@@ -57,8 +58,15 @@ def test(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='p
         else:
             model = HeMIS(num_classes=testset.nb_labels, in_channels=1, merge_at=other_args.merge)
     else:
-        densenet_params = get_densenet_params(architecture)
-        model = DenseNet(num_classes=testset.nb_labels, in_channels=in_channels, **densenet_params)
+        if 'resnet' in architecture:
+            modelparams = get_resnet_params(architecture)
+            model = ResNet(num_classes=testset.nb_labels, in_channels=in_channels, **modelparams)
+            model_type = 'resnet'
+        else:
+            # Use DenseNet by default
+            modelparams = get_densenet_params(architecture)
+            model = DenseNet(num_classes=testset.nb_labels, in_channels=in_channels, **modelparams)
+            model_type = 'densenet'
 
     # Find best weights
     df_file = '{}-metrics.csv'.format(target)
