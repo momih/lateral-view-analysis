@@ -1,24 +1,22 @@
 import argparse
+import pickle
 from os.path import join, exists
 
 import numpy as np
-
+import pandas as pd
 import torch
+from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_score
 from torch.utils.data import DataLoader
 from torchvision.transforms import Compose
-
-from dataset import PCXRayDataset, Normalize, ToTensor, split_dataset
-from models.densenet import DenseNet, add_dropout, get_densenet_params
-from models.joint import JointConcatModel, Hemis, add_dropout_hemis, MultiTaskModel
-
-from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_score
-import pandas as pd
-import pickle
 from tqdm import tqdm
 
-def test(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='pa', batch_size=1, dropout=0.0, pretrained=False,
-         min_patients_per_label=100, seed=666, merge_at=2, joint_model_type='hemis', 
-         combine_at='prepool', join_how='concat', densenet_config='densenet121'):
+from dataset import PCXRayDataset, Normalize, ToTensor, split_dataset
+from models import DenseNet, HeMIS, HeMISConcat, FrontalLateralMultiTask
+from models import get_densenet_params
+
+def test(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='pa',
+         batch_size=1, pretrained=False, min_patients_per_label=100, seed=666,
+         model_type='hemis', architecture='densenet121', other_args=None):
     assert target in ['pa', 'l', 'joint']
 
     torch.manual_seed(seed)
@@ -48,26 +46,19 @@ def test(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='p
     print("{0} patients in test set.".format(len(testset)))
 
     # Load model
-    if pretrained:
-        in_channels = 3
-    else:
-        in_channels = 2 if target == 'joint' else 1
-    
-    if target == 'joint':
-        if joint_model_type == 'concat':
-            model = JointConcatModel(num_classes=testset.nb_labels, in_channels=1)
-        elif joint_model_type == 'multitask':
-            model = MultiTaskModel(num_classes=testset.nb_labels, in_channels=1,
-                                   combine_at=combine_at, join_how=join_how)
-        else:
-            model = Hemis(num_classes=testset.nb_labels, in_channels=1, merge_at=merge_at)
-    else:
-        densenet_params = get_densenet_params(densenet_config)
-        model = DenseNet(num_classes=testset.nb_labels, in_channels=in_channels, **densenet_params)
+    in_channels = 3 if pretrained else 1
 
-    # Add dropout
-    if dropout:
-        model = add_dropout(model, p=0.2) if target != 'joint' else add_dropout_hemis(model, p=0.2)
+    if target == 'joint':
+        if model_type == 'concat':
+            model = HeMISConcat(num_classes=testset.nb_labels, in_channels=1)
+        elif model_type == 'multitask':
+            model = FrontalLateralMultiTask(num_classes=testset.nb_labels, combine_at=other_args.combine,
+                                            join_how=other_args.join, architecture=architecture)
+        else:
+            model = HeMIS(num_classes=testset.nb_labels, in_channels=1, merge_at=other_args.merge)
+    else:
+        densenet_params = get_densenet_params(architecture)
+        model = DenseNet(num_classes=testset.nb_labels, in_channels=in_channels, **densenet_params)
 
     # Find best weights
     df_file = '{}-metrics.csv'.format(target)
@@ -94,7 +85,7 @@ def test(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='p
 
         # Forward
         output = model(input)
-        if joint_model_type == 'multitask':
+        if model_type == 'multitask':
             output = output[0]
 
         output = torch.sigmoid(output)
@@ -105,7 +96,7 @@ def test(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='p
 
     y_preds = np.vstack(y_preds)
     y_true = np.vstack(y_true)
-    
+
     np.save(join(output_dir, "{}_preds_{}".format(target, seed)), y_preds)
     np.save(join(output_dir, "{}_true_{}".format(target, seed)), y_true)
 
@@ -121,7 +112,7 @@ def test(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='p
     metrics = {'accuracy': accuracy_score(y_true, np.where(y_preds > 0.5, 1, 0)),
                'auc': roc_auc_score(y_true, y_preds, average='weighted'),
                'prc': average_precision_score(y_true, y_preds, average='weighted')}
-               
+
     print(metrics)
     with open(join(output_dir, '{}-seed{}-test.pkl'.format(target, seed)), 'wb') as f:
         pickle.dump({'auc': auc, 'prc': prc}, f)
@@ -129,28 +120,34 @@ def test(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='p
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Usage')
+    # Paths
     parser.add_argument('data_dir', type=str)
     parser.add_argument('csv_path', type=str)
     parser.add_argument('splits_path', type=str)
     parser.add_argument('output_dir', type=str)
     parser.add_argument('--logdir', type=str, default='./logs')
-    parser.add_argument('--target', type=str, default='pa')
-    parser.add_argument('--batch_size', type=int, default=1)
-    parser.add_argument('--pretrained', type=bool, default=False)
-    parser.add_argument('--seed', type=int, default=1)
-    parser.add_argument('--merge', type=int, default=3)
-    parser.add_argument('--densenet_config', type=str, default='densenet121')
 
+    # Model params
+    parser.add_argument('--arch', type=str, default='densenet121')
+    parser.add_argument('--model-type', type=str, default='hemis')
+    parser.add_argument('--pretrained', action='store_true')
+
+    # Hyperparams
+    parser.add_argument('--batch_size', type=int, default=1)
+
+    # Dataset params
+    parser.add_argument('--target', type=str, default='pa')
     parser.add_argument('--min_patients', type=int, default=50)
-    parser.add_argument('--jointmodel', type=str, default='hemis')
+    parser.add_argument('--seed', type=int, default=666)
+
+    # Other optional arguments
+    parser.add_argument('--merge', type=int, default=2)
     parser.add_argument('--mt-combine-at', dest='combine', type=str, default='prepool')
     parser.add_argument('--mt-join', dest='join', type=str, default='concat')
     args = parser.parse_args()
     print(args)
 
     test(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
-         logdir=args.logdir, batch_size=args.batch_size, pretrained=args.pretrained, 
-         min_patients_per_label=args.min_patients,  seed=args.seed,
-         joint_model_type=args.jointmodel, combine_at=args.combine, join_how=args.join, 
-         merge_at=args.merge, densenet_config=args.densenet_config)
-
+         logdir=args.logdir, batch_size=args.batch_size, pretrained=args.pretrained,
+         min_patients_per_label=args.min_patients, seed=args.seed,
+         model_type=args.model_type, architecture=args.arch, other_args=args)

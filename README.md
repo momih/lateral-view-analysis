@@ -9,5 +9,5 @@ This repo contains the code for:
 - The training and testing routine for the models.
 
 
-![Poster](MIDLPoster.png)
+![Poster](other/MIDLPoster.png)
 

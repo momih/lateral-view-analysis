@@ -1,31 +1,28 @@
 import argparse
-from glob import glob
 import os
-from os.path import join, exists
 import pickle
+from glob import glob
+from os.path import join, exists
 
 import numpy as np
-
+import pandas as pd
 import torch
+from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_score
+from torch import nn
 from torch.optim import Adam, SGD
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
-from torch import nn
 from torchvision.transforms import Compose
 
 from dataset import PCXRayDataset, Normalize, ToTensor, RandomRotation, GaussianNoise, ToPILImage, split_dataset
-from models.densenet import DenseNet, add_dropout, get_densenet_params
-from models.joint import Hemis, add_dropout_hemis, JointConcatModel, MultiTaskModel
-
-from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_score
-import pandas as pd
+from models import DenseNet, HeMIS, HeMISConcat, FrontalLateralMultiTask
+from models import add_dropout, get_densenet_params
 
 
-def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='pa', 
+def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='pa',
           nb_epoch=100, learning_rate=1e-4, batch_size=1, optim='adam',
           dropout=None, pretrained=False, min_patients_per_label=50, seed=666, data_augmentation=True,
-          joint_model_type='hemis', merge_at=2, combine_at='prepool', join_how='concat', loss_wts=None,
-          vote_at_test=False, densenet_config='densenet121', other_args=None):
+          model_type='hemis', architecture='densenet121', other_args=None):
     assert target in ['pa', 'l', 'joint']
 
     torch.manual_seed(seed)
@@ -36,7 +33,7 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
     splits_path = splits_path.format(seed)
 
     print("Training mode: {}".format(target))
-    
+
     if not exists(output_dir):
         os.makedirs(output_dir)
 
@@ -68,40 +65,39 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
     print("{0} patients in validation set.".format(len(valset)))
 
     # Load model
-    if pretrained:
-        in_channels = 3
-    else:
-        in_channels = 2 if target == 'joint' else 1
-    
+    in_channels = 3 if pretrained else 1
+
     if target == 'joint':
-        if joint_model_type == 'concat':
-            model = JointConcatModel(num_classes=trainset.nb_labels, in_channels=1)
-        elif joint_model_type == 'multitask':
-            model = MultiTaskModel(num_classes=trainset.nb_labels, in_channels=1,
-                                   combine_at=combine_at, join_how=join_how)
+        if model_type == 'concat':
+            model = HeMISConcat(num_classes=trainset.nb_labels, in_channels=1)
+        elif model_type == 'multitask':
+            model = FrontalLateralMultiTask(num_classes=trainset.nb_labels, combine_at=other_args.combine,
+                                            join_how=other_args.join, drop_view_prob=other_args.drop_view_prob,
+                                            architecture=architecture)
         else:
-            model = Hemis(num_classes=trainset.nb_labels, in_channels=1, merge_at=merge_at)
+            model = HeMIS(num_classes=trainset.nb_labels, in_channels=1, merge_at=other_args.merge,
+                          drop_view_prob=other_args.drop_view_prob)
     else:
-        densenet_params = get_densenet_params(densenet_config)
+        densenet_params = get_densenet_params(architecture)
         model = DenseNet(num_classes=trainset.nb_labels, in_channels=in_channels, **densenet_params)
+        model_type = 'densenet'
 
     # Add dropout
     if dropout:
-        model = add_dropout(model, p=dropout) if joint_model_type != 'hemis' else add_dropout_hemis(model, p=dropout)
+        model = add_dropout(model, p=dropout, model=model_type)
 
     print(trainset.labels_weights)
-    
+
     criterion = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(device))
-    
-    if joint_model_type == 'multitask':
+
+    if model_type == 'multitask':
         criterion_L = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(device))
         criterion_PA = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(device))
-
 
     # Optimizer
     if 'adam' in optim:
         use_amsgrad = 'amsgrad' in optim
-        optimizer = Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.999), 
+        optimizer = Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.999),
                          eps=1e-08, weight_decay=1e-5, amsgrad=use_amsgrad)
     else:
         optimizer = SGD(model.parameters(), lr=learning_rate, weight_decay=1e-5,
@@ -121,13 +117,15 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
     weights_files = glob(join(output_dir, '{}-e*.pt'.format(target)))  # Find all weights files
     if len(weights_files):
         # Find most recent epoch
-        epochs = np.array([int(w[len(join(output_dir, '{}-e'.format(target))):-len('.pt')].split('-')[0]) for w in weights_files])
+        epochs = np.array(
+            [int(w[len(join(output_dir, '{}-e'.format(target))):-len('.pt')].split('-')[0]) for w in weights_files])
         start_epoch = epochs.max() + 1
         weights_files = [weights_files[i] for i in np.argwhere(epochs == np.amax(epochs)).flatten()]
 
         # Find most recent batch
         if len(weights_files) > 1:
-            batches = np.array([int(w[len(join(output_dir, '{}-e'.format(target))):-len('.pt')].split('i')[1]) for w in weights_files])
+            batches = np.array(
+                [int(w[len(join(output_dir, '{}-e'.format(target))):-len('.pt')].split('i')[1]) for w in weights_files])
             start_batch = batches.max()
             weights_file = weights_files[np.argmax(batches)]
             start_epoch -= 1
@@ -184,11 +182,11 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
             # Forward
             output = model(input)
             optimizer.zero_grad()
-            if joint_model_type == 'multitask':
+            if model_type == 'multitask':
                 joint_logit, frontal_logit, lateral_logit = output
                 loss_J = criterion(joint_logit, label)
-                loss_PA = criterion_PA(frontal_logit, label) * loss_wts[0]
-                loss_L = criterion_L(lateral_logit, label) * loss_wts[1]
+                loss_PA = criterion_PA(frontal_logit, label) * other_args.loss_weights[0]
+                loss_L = criterion_L(lateral_logit, label) * other_args.loss_weights[1]
                 loss = loss_J + loss_L + loss_PA
 
                 output = joint_logit
@@ -238,11 +236,12 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
 
             # Forward
             output = model(input)
-            if joint_model_type == 'multitask':
-                if not vote_at_test:
-                    output = output[0]
-                else:
+            if model_type == 'multitask':
+                if other_args.vote_at_test:
                     output = torch.stack(output, dim=1).mean(dim=1)
+                else:
+                    output = output[0]
+
             running_loss += criterion(output, label).mean().data
 
             output = torch.sigmoid(output)
@@ -300,38 +299,45 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Usage')
+
+    # Paths
     parser.add_argument('data_dir', type=str)
     parser.add_argument('csv_path', type=str)
     parser.add_argument('splits_path', type=str)
     parser.add_argument('output_dir', type=str)
-    parser.add_argument('--target', type=str, default='pa')
     parser.add_argument('--logdir', type=str, default='./logs')
-    parser.add_argument('--densenet_config', type=str, default='densenet121')
 
+    # Model params
+    parser.add_argument('--arch', type=str, default='densenet121')
+    parser.add_argument('--model-type', type=str, default='hemis')
+    parser.add_argument('--pretrained', action='store_true')
+
+    # Hyperparams
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--epochs', type=int, default=100)
-    parser.add_argument('--optim', type=str, default='adam')
-
-    parser.add_argument('--pretrained', type=bool, default=False)
     parser.add_argument('--learning_rate', type=float, default=0.0001)
     parser.add_argument('--dropout', type=float, default=0.2)
+    parser.add_argument('--optim', type=str, default='adam')
+
+    # Dataset params
+    parser.add_argument('--target', type=str, default='pa')
     parser.add_argument('--min_patients', type=int, default=50)
     parser.add_argument('--seed', type=int, default=666)
+
+    # Other optional arguments
     parser.add_argument('--merge', type=int, default=2)
-    parser.add_argument('--jointmodel', type=str, default='hemis')
+    parser.add_argument('--drop-view-prob', type=float, default=0.0)
     parser.add_argument('--mt-combine-at', dest='combine', type=str, default='prepool')
     parser.add_argument('--mt-join', dest='join', type=str, default='concat')
-    parser.add_argument('--loss-weights', type=float, default=(0.3,0.3), nargs=2)
+    parser.add_argument('--loss-weights', type=float, default=(0.3, 0.3), nargs=2)
     parser.add_argument('--nesterov', action='store_true')
     parser.add_argument('--momentum', default=0.0, type=float)
 
     args = parser.parse_args()
     np.set_printoptions(suppress=True, precision=4)
-    
+
     print(args)
     train(args.data_dir, args.csv_path, args.splits_path, args.output_dir, logdir=args.logdir,
           target=args.target, batch_size=args.batch_size, nb_epoch=args.epochs, pretrained=args.pretrained,
-          learning_rate=args.learning_rate, min_patients_per_label=args.min_patients,
-          dropout=args.dropout, seed=args.seed, joint_model_type=args.jointmodel,
-          combine_at=args.combine, join_how=args.join, merge_at=args.merge, 
-          loss_wts=args.loss_weights, densenet_config=args.densenet_config, other_args=args)
+          learning_rate=args.learning_rate, min_patients_per_label=args.min_patients, dropout=args.dropout,
+          seed=args.seed, model_type=args.model_type, architecture=args.arch, other_args=args)
