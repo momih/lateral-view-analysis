@@ -1,10 +1,8 @@
-import re
 from collections import OrderedDict
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.utils.model_zoo as model_zoo
 
 model_urls = {
     'densenet121': 'https://download.pytorch.org/models/densenet121-a639ec97.pth'
@@ -22,7 +20,6 @@ def get_densenet_params(config):
         # default configuration: densenet121
         ret = dict(growth_rate=32, block_config=(6, 12, 24, 16), num_init_features=64)
     return ret
-
 
 
 def add_dropout_rec(module, p):
@@ -79,6 +76,7 @@ class _Transition(nn.Sequential):
                                           kernel_size=1, stride=1, bias=False))
         self.add_module('pool', nn.AvgPool2d(kernel_size=2, stride=2))
 
+
 class DenseNet(nn.Module):
     r"""Densenet-BC model class, based on
     `"Densely Connected Convolutional Networks" <https://arxiv.org/pdf/1608.06993.pdf>`_
@@ -95,8 +93,8 @@ class DenseNet(nn.Module):
         num_classes (int) - number of classification classes
     """
 
-    def __init__(self, growth_rate=32, block_config=(6, 12, 24, 16),
-                 num_init_features=64, bn_size=4, drop_rate=0, num_classes=1000, in_channels=3):
+    def __init__(self, growth_rate=32, block_config=(6, 12, 24, 16), num_init_features=64, bn_size=4,
+                 drop_rate=0, num_classes=1000, in_channels=3):
 
         super(DenseNet, self).__init__()
 
