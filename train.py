@@ -317,6 +317,7 @@ if __name__ == "__main__":
     parser.add_argument('--arch', type=str, default='densenet121')
     parser.add_argument('--model-type', type=str, default='hemis')
     parser.add_argument('--pretrained', action='store_true')
+    parser.add_argument('--vote-at-test', action='store_true')
 
     # Hyperparams
     parser.add_argument('--batch_size', type=int, default=1)

@@ -36,5 +36,6 @@ def add_dropout(net, p=0.1, model='densenet'):
         net.lateral_model.classifier = add_dropout_rec(net.lateral_model.classifier, p=p)
     else:
         return net
+    
     net.classifier = add_dropout_rec(net.classifier, p=p)
     return net
