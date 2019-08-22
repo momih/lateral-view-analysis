@@ -332,7 +332,8 @@ if __name__ == "__main__":
 
     # Model params
     parser.add_argument('--arch', type=str, default='densenet121')
-    parser.add_argument('--model-type', type=str, default='hemis')
+    parser.add_argument('--model-type', type=str, default='hemis', 
+                        help="Which joint model to pick: must be one of ['multitask', 'dualnet', 'stacked', 'hemis', 'concat']")
     parser.add_argument('--pretrained', action='store_true')
     parser.add_argument('--vote-at-test', action='store_true')
 
@@ -349,11 +350,11 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=666)
 
     # Other optional arguments
-    parser.add_argument('--merge', type=int, default=3)
-    parser.add_argument('--drop-view-prob', type=float, default=0.0)
-    parser.add_argument('--mt-combine-at', dest='combine', type=str, default='prepool')
-    parser.add_argument('--mt-join', dest='join', type=str, default='concat')
-    parser.add_argument('--loss-weights', type=float, default=(0.3, 0.3), nargs=2)
+    parser.add_argument('--merge', type=int, default=3, help='For Hemis and HemisConcat. Merge modalities after N blocks')
+    parser.add_argument('--drop-view-prob', type=float, default=0.0, help='For Hemis, HemisConcat and Multitask. Drop either view with prob/2 and keep both views with 1-prob')
+    parser.add_argument('--mt-combine-at', dest='combine', type=str, default='prepool', help='For Multitask. Combine both views before or after pooling')
+    parser.add_argument('--mt-join', dest='join', type=str, default='concat', help='For Multitask. Combine views how? Valid options - concat, max, mean')
+    parser.add_argument('--loss-weights', type=float, default=(0.3, 0.3), nargs=2, help='For Multitask. Loss weights for regularizing loss. 1st is for PA, 2nd for L')
     parser.add_argument('--nesterov', action='store_true')
     parser.add_argument('--momentum', default=0.0, type=float)
     parser.add_argument('--flatdir', action='store_false')
