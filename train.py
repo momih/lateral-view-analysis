@@ -355,7 +355,7 @@ if __name__ == "__main__":
     parser.add_argument('--loss-weights', type=float, default=(0.3, 0.3), nargs=2)
     parser.add_argument('--nesterov', action='store_true')
     parser.add_argument('--momentum', default=0.0, type=float)
-    parser.add_argument('--flatdir', action='store_true')
+    parser.add_argument('--flatdir', action='store_false')
 
 
     args = parser.parse_args()
