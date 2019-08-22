@@ -78,7 +78,8 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
             model = DenseNet(num_classes=trainset.nb_labels, in_channels=2, **modelparams)
         
         elif model_type == 'concat':
-            model = HeMISConcat(num_classes=trainset.nb_labels, in_channels=1)
+            model = HeMISConcat(num_classes=trainset.nb_labels, in_channels=1, merge_at=other_args.merge,
+                                drop_view_prob=other_args.drop_view_prob)
         
         else: # Default HeMIS
             model = HeMIS(num_classes=trainset.nb_labels, in_channels=1, merge_at=other_args.merge,
