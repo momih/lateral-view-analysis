@@ -22,7 +22,7 @@ def add_dropout(net, p=0.1, model='densenet'):
                 if name != "conv0":
                     module._modules[name] = add_dropout_rec(module._modules[name], p=p)
 
-    elif model in ['multitask', 'singletask']:
+    elif model in ['multitask', 'singletask', 'dualnet']:
         for name in net.frontal_model.features._modules.keys():
             if name != "conv0":
                 net.frontal_model.features._modules[name] = add_dropout_rec(net.frontal_model.features._modules[name],
