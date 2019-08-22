@@ -65,27 +65,44 @@ class PCXRayDataset(Dataset):
                 self.df = self.df[self.df.PatientID.isin(test_ids)]
 
             self.df = self.df.reset_index()
+            
+        self.df = self.df.sort_values('PatientID').reset_index(drop=True)
+        
+        def processdf(subset, to_keep):
+            imageid = dict(zip(subset.Projection, subset.ImageID))
+            imagedir = dict(zip(subset.Projection, subset.ImageDir))
+            
+            labels = eval(subset.Clean_Labels.tolist()[0])
+            labels = list(set(labels).intersection(to_keep))
+            
+            return {'ImageDir':imagedir, 'ImageID':imageid, 'Labels':labels}
+        
+
+        self.metadata = self.df.groupby('PatientID').apply(lambda x: processdf(x, self.labels)).to_dict()
+        self.idx2pt = {idx:x for idx, x in enumerate(self.df.PatientID.unique())}
+    
+    @property    
+    def targets(self):
+        targets = [self.metadata[self.idx2pt[i]]['Labels'] for i in range(len(self))]
+        return self.mb.transform(targets)
         
     def __len__(self):
         return len(self.df.PatientID.unique())
     
     def __getitem__(self, idx):
-        subset = self.df[self.df.PatientID == self.df.PatientID[idx * 2]]
-        labels = eval(subset.Clean_Labels.tolist()[0])
-        if set(labels).difference(self.labels):
-            labels.append('other')
-        labels = [l for l in labels if l in self.labels]
 
+        pt_id = self.idx2pt[idx]
+        data = self.metadata[pt_id]
+        
+        labels = data['Labels']
         encoded_labels = self.mb.transform([labels]).squeeze()
 
-        pa_path = subset[subset.Projection == 'PA'][['ImageID', 'ImageDir']]
-        pa_dir = str(int(pa_path['ImageDir'].tolist()[0])) if not self.flat_dir else ''
-        pa_path = join(self.datadir, pa_dir, pa_path['ImageID'].tolist()[0])
+        pa_dir = str(int(data['ImageDir']['PA'])) if not self.flat_dir else ''
+        pa_path = join(self.datadir, pa_dir, data['ImageID']['PA'])
         pa_img = np.array(Image.open(pa_path))[..., np.newaxis]
 
-        l_path = subset[subset.Projection == 'L'][['ImageID', 'ImageDir']]
-        l_dir = str(int(l_path['ImageDir'].tolist()[0])) if not self.flat_dir else ''
-        l_path = join(self.datadir, l_dir, l_path['ImageID'].tolist()[0])
+        l_dir = str(int(data['ImageDir']['L'])) if not self.flat_dir else ''
+        l_path = join(self.datadir, l_dir, data['ImageID']['L'])
         l_img = np.array(Image.open(l_path))[..., np.newaxis]
         
         if self.pretrained:
@@ -122,11 +139,7 @@ class PCXRayDataset(Dataset):
             if v > self.threshold * 2:
                 labels.append(k)
                 labels_count.append(v)
-            else:
-                other_counts.append(v)
-                
-#        labels.append('other')
-#        labels_count.append(sum(other_counts))
+
         
         self.labels = labels
         self.labels_count = labels_count
@@ -134,6 +147,7 @@ class PCXRayDataset(Dataset):
                                                          for label in labels_count], dtype=np.float32))
         self.labels_weights = torch.clamp(self.labels_weights * 0.1, 1., 5.)
         self.nb_labels = len(self.labels)
+
 
 
 class Normalize(object):
