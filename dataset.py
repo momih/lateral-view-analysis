@@ -100,7 +100,6 @@ class PCXRayDataset(Dataset):
         imgs = np.expand_dims(imgs, -1)
         return imgs
         
-    
     def __len__(self):
         return len(self.df.PatientID.unique())
     

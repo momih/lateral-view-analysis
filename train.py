@@ -52,12 +52,12 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
         train_transfo = val_transfo
 
     trainset = PCXRayDataset(data_dir, csv_path, splits_path, transform=Compose(train_transfo), pretrained=pretrained,
-                             min_patients_per_label=min_patients_per_label)
+                             min_patients_per_label=min_patients_per_label, flat_dir=other_args.flatdir)
     trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True,
                              num_workers=2, pin_memory=True)
 
     valset = PCXRayDataset(data_dir, csv_path, splits_path, transform=Compose(val_transfo), dataset='val',
-                           pretrained=pretrained, min_patients_per_label=min_patients_per_label)
+                           pretrained=pretrained, min_patients_per_label=min_patients_per_label, flat_dir=other_args.flatdir)
     valloader = DataLoader(valset, batch_size=batch_size, shuffle=True,
                            num_workers=2, pin_memory=True)
 
@@ -348,13 +348,15 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=666)
 
     # Other optional arguments
-    parser.add_argument('--merge', type=int, default=2)
+    parser.add_argument('--merge', type=int, default=3)
     parser.add_argument('--drop-view-prob', type=float, default=0.0)
     parser.add_argument('--mt-combine-at', dest='combine', type=str, default='prepool')
     parser.add_argument('--mt-join', dest='join', type=str, default='concat')
     parser.add_argument('--loss-weights', type=float, default=(0.3, 0.3), nargs=2)
     parser.add_argument('--nesterov', action='store_true')
     parser.add_argument('--momentum', default=0.0, type=float)
+    parser.add_argument('--flatdir', action='store_true')
+
 
     args = parser.parse_args()
     np.set_printoptions(suppress=True, precision=4)
