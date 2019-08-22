@@ -32,7 +32,8 @@ def split_dataset(csvpath: str, output: str, train=0.6, val=0.2, seed=666) -> No
 
 class PCXRayDataset(Dataset):
     def __init__(self, datadir, csvpath, splitpath, transform=None,
-                 dataset='train', pretrained=False, min_patients_per_label=50):
+                 dataset='train', pretrained=False, min_patients_per_label=50,
+                 exclude_labels=["other", "normal", "no finding"], flat_dir=True):
         """
         Data reader. Only selects labels that at least min_patients_per_label patients have.
         """
@@ -44,7 +45,8 @@ class PCXRayDataset(Dataset):
         self.transform = transform
         self.pretrained = pretrained
         self.threshold = min_patients_per_label
-
+        self.exclude_labels = exclude_labels
+        self.flat_dir = flat_dir
         self.df = pd.read_csv(csvpath)
 
         self._build_labels()
@@ -66,7 +68,7 @@ class PCXRayDataset(Dataset):
         
     def __len__(self):
         return len(self.df.PatientID.unique())
-
+    
     def __getitem__(self, idx):
         subset = self.df[self.df.PatientID == self.df.PatientID[idx * 2]]
         labels = eval(subset.Clean_Labels.tolist()[0])
@@ -77,17 +79,17 @@ class PCXRayDataset(Dataset):
         encoded_labels = self.mb.transform([labels]).squeeze()
 
         pa_path = subset[subset.Projection == 'PA'][['ImageID', 'ImageDir']]
-        pa_path = join(self.datadir, str(int(pa_path['ImageDir'].tolist()[0])), pa_path['ImageID'].tolist()[0])
-        # pa_path = './data/processed/0/46523715740384360192496023767246369337_veyewt.png'
+        pa_dir = str(int(pa_path['ImageDir'].tolist()[0])) if not self.flat_dir else ''
+        pa_path = join(self.datadir, pa_dir, pa_path['ImageID'].tolist()[0])
         pa_img = np.array(Image.open(pa_path))[..., np.newaxis]
-        if self.pretrained:
-            pa_img = np.repeat(pa_img, 3, axis=-1)
 
         l_path = subset[subset.Projection == 'L'][['ImageID', 'ImageDir']]
-        l_path = join(self.datadir, str(int(l_path['ImageDir'].tolist()[0])), l_path['ImageID'].tolist()[0])
-        # l_path = './data/processed/0/46523715740384360192496023767246369337_veyewt.png'
+        l_dir = str(int(l_path['ImageDir'].tolist()[0])) if not self.flat_dir else ''
+        l_path = join(self.datadir, l_dir, l_path['ImageID'].tolist()[0])
         l_img = np.array(Image.open(l_path))[..., np.newaxis]
+        
         if self.pretrained:
+            pa_img = np.repeat(pa_img, 3, axis=-1)
             l_img = np.repeat(l_img, 3, axis=-1)
 
         sample = {'PA': pa_img, 'L': l_img}
@@ -114,14 +116,17 @@ class PCXRayDataset(Dataset):
         labels_count = []
         other_counts = []
         for k, v in labels_dict.items():
+            if k in self.exclude_labels:
+                print("excluding label {} which occured {} times".format(k,v))
+                continue            
             if v > self.threshold * 2:
                 labels.append(k)
                 labels_count.append(v)
             else:
                 other_counts.append(v)
                 
-        labels.append('other')
-        labels_count.append(sum(other_counts))
+#        labels.append('other')
+#        labels_count.append(sum(other_counts))
         
         self.labels = labels
         self.labels_count = labels_count

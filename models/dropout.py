@@ -10,19 +10,19 @@ def add_dropout_rec(module, p):
 
 
 def add_dropout(net, p=0.1, model='densenet'):
-    if model == 'densenet':
+    if model in ['densenet', 'stacked']:
         for name in net.features._modules.keys():
             if name != "conv0":
                 net.features._modules[name] = add_dropout_rec(net.features._modules[name], p=p)
 
-    elif model == 'hemis':
+    elif model in ['hemis', 'concat']:
         for x in ('branches', 'combined'):
             module = net._modules[x]
             for name in module._modules.keys():
                 if name != "conv0":
                     module._modules[name] = add_dropout_rec(module._modules[name], p=p)
 
-    elif model == 'multitask':
+    elif model in ['multitask', 'singletask']:
         for name in net.frontal_model.features._modules.keys():
             if name != "conv0":
                 net.frontal_model.features._modules[name] = add_dropout_rec(net.frontal_model.features._modules[name],
@@ -35,6 +35,7 @@ def add_dropout(net, p=0.1, model='densenet'):
                                                                             p=p)
         net.lateral_model.classifier = add_dropout_rec(net.lateral_model.classifier, p=p)
     else:
+        print('No dropout added')
         return net
     
     net.classifier = add_dropout_rec(net.classifier, p=p)

@@ -68,15 +68,22 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
     in_channels = 3 if pretrained else 1
 
     if target == 'joint':
-        if model_type == 'concat':
-            model = HeMISConcat(num_classes=trainset.nb_labels, in_channels=1)
-        elif model_type == 'multitask':
+        if model_type in ['singletask', 'multitask', 'dualnet']:
+            joint_only = model_type != 'multitask'
             model = FrontalLateralMultiTask(num_classes=trainset.nb_labels, combine_at=other_args.combine,
                                             join_how=other_args.join, drop_view_prob=other_args.drop_view_prob,
-                                            architecture=architecture)
-        else:
+                                            joint_only=joint_only, architecture=architecture)
+        elif model_type == 'stacked':
+            modelparams = get_densenet_params(architecture)
+            model = DenseNet(num_classes=trainset.nb_labels, in_channels=2, **modelparams)
+        
+        elif model_type == 'concat':
+            model = HeMISConcat(num_classes=trainset.nb_labels, in_channels=1)
+        
+        else: # Default HeMIS
             model = HeMIS(num_classes=trainset.nb_labels, in_channels=1, merge_at=other_args.merge,
                           drop_view_prob=other_args.drop_view_prob)
+            model_type = 'hemis'
     else:
         if 'resnet' in architecture:
             modelparams = get_resnet_params(architecture)
@@ -87,7 +94,8 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
             modelparams = get_densenet_params(architecture)
             model = DenseNet(num_classes=trainset.nb_labels, in_channels=in_channels, **modelparams)
             model_type = 'densenet'
-
+    
+    print('Created {} model'.format(model_type))
     # Add dropout
     if dropout:
         model = add_dropout(model, p=dropout, model=model_type)
@@ -120,6 +128,7 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
     val_auc = []
     val_prc = []
     metrics_df = pd.DataFrame(columns=['accuracy', 'auc', 'prc', 'loss', 'epoch', 'error'])
+    
     weights_files = glob(join(output_dir, '{}-e*.pt'.format(target)))  # Find all weights files
     if len(weights_files):
         # Find most recent epoch
@@ -183,7 +192,8 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
             else:
                 pa, l, label = data['PA'].to(device), data['L'].to(device), data['encoded_labels'].to(device)
                 input = [pa, l]
-            # sample_weights = data['sample_weight'].to(device)
+                if model_type == 'stacked':
+                    input = torch.stack(input, dim=0)
 
             # Forward
             output = model(input)
@@ -196,7 +206,6 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
                 loss = loss_J + loss_L + loss_PA
 
                 output = joint_logit
-
             else:
                 loss = criterion(output, label)
             # loss = (loss * sample_weights / sample_weights.sum()).sum()
@@ -224,7 +233,6 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
 
         train_preds = np.vstack(train_preds)
         train_true = np.vstack(train_true)
-        train_auc = roc_auc_score(train_true, train_preds, average=None)
 
         model.eval()
 
@@ -265,7 +273,15 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
         val_preds_all.append(val_preds)
         auc = roc_auc_score(val_true, val_preds, average=None)
         val_auc.append(auc)
+        
+        #TODO add options to print
         print("Validation AUC, Train AUC and difference")
+        try:
+            train_auc = roc_auc_score(train_true, train_preds, average=None)
+        except:
+            print('Error in calculating train AUC')
+            train_auc = np.zeros_like(auc)
+
         diff_train_val = auc - train_auc
         diff_train_val = np.stack([auc, train_auc, diff_train_val], axis=-1)
         print(diff_train_val.round(4))

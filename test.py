@@ -49,14 +49,24 @@ def test(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='p
     # Load model
     in_channels = 3 if pretrained else 1
 
+
     if target == 'joint':
-        if model_type == 'concat':
-            model = HeMISConcat(num_classes=testset.nb_labels, in_channels=1)
-        elif model_type == 'multitask':
+        if model_type in ['singletask', 'multitask', 'dualnet']:
+            joint_only = model_type != 'multitask'
             model = FrontalLateralMultiTask(num_classes=testset.nb_labels, combine_at=other_args.combine,
-                                            join_how=other_args.join, architecture=architecture)
-        else:
-            model = HeMIS(num_classes=testset.nb_labels, in_channels=1, merge_at=other_args.merge)
+                                            join_how=other_args.join, drop_view_prob=other_args.drop_view_prob,
+                                            joint_only=joint_only, architecture=architecture)
+        elif model_type == 'stacked':
+            modelparams = get_densenet_params(architecture)
+            model = DenseNet(num_classes=testset.nb_labels, in_channels=2, **modelparams)
+        
+        elif model_type == 'concat':
+            model = HeMISConcat(num_classes=testset.nb_labels, in_channels=1)
+        
+        else: # Default HeMIS
+            model = HeMIS(num_classes=testset.nb_labels, in_channels=1, merge_at=other_args.merge,
+                          drop_view_prob=other_args.drop_view_prob)
+            model_type = 'hemis'
     else:
         if 'resnet' in architecture:
             modelparams = get_resnet_params(architecture)
@@ -67,6 +77,8 @@ def test(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='p
             modelparams = get_densenet_params(architecture)
             model = DenseNet(num_classes=testset.nb_labels, in_channels=in_channels, **modelparams)
             model_type = 'densenet'
+    
+    print('Created {} model'.format(model_type))
 
     # Find best weights
     df_file = '{}-metrics.csv'.format(target)
@@ -90,6 +102,8 @@ def test(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='p
         else:
             pa, l, label = data['PA'].to(device), data['L'].to(device), data['encoded_labels'].to(device)
             input = [pa, l]
+            if model_type == 'stacked':
+                input = torch.stack(input, dim=0)
 
         # Forward
         output = model(input)
