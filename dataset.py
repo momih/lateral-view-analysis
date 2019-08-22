@@ -9,7 +9,7 @@ from sklearn.preprocessing import MultiLabelBinarizer
 import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
-
+from tqdm import tqdm
 
 def split_dataset(csvpath: str, output: str, train=0.6, val=0.2, seed=666) -> None:
     """
@@ -83,9 +83,24 @@ class PCXRayDataset(Dataset):
     
     @property    
     def targets(self):
-        targets = [self.metadata[self.idx2pt[i]]['Labels'] for i in range(len(self))]
+        targets = [self.metadata[pt]['Labels'] for pt in self.idx2pt.values()]
         return self.mb.transform(targets)
+    
+    @property
+    def data(self):
+        files = []
+        for pt in self.idx2pt.values():
+            data = self.metadata[pt]
+            pa_dir = str(int(data['ImageDir']['PA'])) if not self.flat_dir else ''
+            pa_path = join(self.datadir, pa_dir, data['ImageID']['PA'])
+            files.append(pa_path)
+
+        print("Reading files")
+        imgs = np.stack([np.array(Image.open(path)) for path in tqdm(files)])
+        imgs = np.expand_dims(imgs, -1)
+        return imgs
         
+    
     def __len__(self):
         return len(self.df.PatientID.unique())
     
