@@ -193,7 +193,7 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
                 pa, l, label = data['PA'].to(device), data['L'].to(device), data['encoded_labels'].to(device)
                 input = [pa, l]
                 if model_type == 'stacked':
-                    input = torch.stack(input, dim=0)
+                    input = torch.cat(input, dim=1)
 
             # Forward
             output = model(input)
