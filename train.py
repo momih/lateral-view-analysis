@@ -4,6 +4,7 @@ import pickle
 from glob import glob
 from os.path import join, exists
 
+import gc
 import numpy as np
 import pandas as pd
 import torch
@@ -22,7 +23,7 @@ from models import add_dropout, get_densenet_params, get_resnet_params
 def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='pa',
           nb_epoch=100, learning_rate=1e-4, batch_size=1, optim='adam',
           dropout=None, pretrained=False, min_patients_per_label=50, seed=666, data_augmentation=True,
-          model_type='hemis', architecture='densenet121', other_args=None):
+          model_type='hemis', architecture='densenet121', other_args=None, threads=0):
     assert target in ['pa', 'l', 'joint']
 
     torch.manual_seed(seed)
@@ -53,13 +54,15 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
 
     trainset = PCXRayDataset(data_dir, csv_path, splits_path, transform=Compose(train_transfo), pretrained=pretrained,
                              min_patients_per_label=min_patients_per_label, flat_dir=other_args.flatdir)
+    
+    print("predicting {} labels: {}".format(len(trainset.labels), trainset.labels))
     trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True,
-                             num_workers=2, pin_memory=True)
+                             num_workers=threads, pin_memory=True)
 
     valset = PCXRayDataset(data_dir, csv_path, splits_path, transform=Compose(val_transfo), dataset='val',
                            pretrained=pretrained, min_patients_per_label=min_patients_per_label, flat_dir=other_args.flatdir)
     valloader = DataLoader(valset, batch_size=batch_size, shuffle=True,
-                           num_workers=2, pin_memory=True)
+                           num_workers=threads, pin_memory=True)
 
     print("{0} patients in training set.".format(len(trainset)))
     print("{0} patients in validation set.".format(len(valset)))
@@ -216,11 +219,11 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
             optimizer.step()
 
             # Save predictions
-            train_preds.append(torch.sigmoid(output).data.cpu().numpy())
-            train_true.append(label.data.cpu().numpy())
+            train_preds.append(torch.sigmoid(output).detach().data.cpu().numpy())
+            train_true.append(label.data.detach().cpu().numpy())
 
             # print statistics
-            running_loss += loss.data
+            running_loss += loss.detach().data
             print_every = max(1, len(trainset) // (20 * batch_size))
             if (i + 1) % print_every == 0:
                 running_loss = running_loss.cpu().detach().numpy().squeeze() / print_every
@@ -231,12 +234,15 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
                     pickle.dump(train_loss, f)
                 torch.save(model.state_dict(), join(output_dir, '{0}-e{1}-i{2}.pt'.format(target, epoch, i + 1)))
                 running_loss = torch.zeros(1, requires_grad=False).to(device)
+            del output
+            del input
+            del data
 
         train_preds = np.vstack(train_preds)
         train_true = np.vstack(train_true)
 
         model.eval()
-
+        
         running_loss = torch.zeros(1, requires_grad=False, dtype=torch.float).to(device)
         val_preds = []
         val_true = []
@@ -257,13 +263,14 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
                 else:
                     output = output[0]
 
-            running_loss += criterion(output, label).mean().data
-
-            output = torch.sigmoid(output)
+            running_loss += criterion(output, label).mean().detach().data
 
             # Save predictions
-            val_preds.append(output.data.cpu().numpy())
-            val_true.append(label.data.cpu().numpy())
+            val_preds.append(torch.sigmoid(output).data.cpu().numpy())
+            val_true.append(label.data.cpu().detach().numpy())
+            del output
+            del input
+            del data
 
         running_loss = running_loss.cpu().detach().numpy().squeeze() / (len(valset) / batch_size)
         val_loss.append(running_loss)
@@ -329,6 +336,7 @@ if __name__ == "__main__":
     parser.add_argument('splits_path', type=str)
     parser.add_argument('output_dir', type=str)
     parser.add_argument('--logdir', type=str, default='./logs')
+    parser.add_argument('--exp_name', type=str, default=None)
 
     # Model params
     parser.add_argument('--arch', type=str, default='densenet121')
@@ -348,6 +356,7 @@ if __name__ == "__main__":
     parser.add_argument('--target', type=str, default='pa')
     parser.add_argument('--min_patients', type=int, default=50)
     parser.add_argument('--seed', type=int, default=666)
+    parser.add_argument('--threads', type=int, default=0)
 
     # Other optional arguments
     parser.add_argument('--merge', type=int, default=3, help='For Hemis and HemisConcat. Merge modalities after N blocks')
@@ -363,8 +372,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     np.set_printoptions(suppress=True, precision=4)
 
+    if args.exp_name:
+        args.output_dir = args.output_dir + "-" + args.exp_name
+    
     print(args)
     train(args.data_dir, args.csv_path, args.splits_path, args.output_dir, logdir=args.logdir,
           target=args.target, batch_size=args.batch_size, nb_epoch=args.epochs, pretrained=args.pretrained,
           learning_rate=args.learning_rate, min_patients_per_label=args.min_patients, dropout=args.dropout,
-          seed=args.seed, model_type=args.model_type, architecture=args.arch, other_args=args)
+          seed=args.seed, model_type=args.model_type, architecture=args.arch, other_args=args, threads=args.threads)
