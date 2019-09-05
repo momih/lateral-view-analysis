@@ -171,6 +171,8 @@ if __name__ == "__main__":
     parser.add_argument('--merge', type=int, default=2)
     parser.add_argument('--mt-combine-at', dest='combine', type=str, default='prepool')
     parser.add_argument('--mt-join', dest='join', type=str, default='concat')
+    parser.add_argument('--drop-view-prob', type=float, default=0.0, help='For Hemis, HemisConcat and Multitask. Drop either view with prob/2 and keep both views with 1-prob')
+
     args = parser.parse_args()
     print(args)
 

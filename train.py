@@ -121,7 +121,7 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
         optimizer = SGD(model.parameters(), lr=learning_rate, weight_decay=1e-5,
                         momentum=other_args.momentum, nesterov=other_args.nesterov)
 
-    scheduler = StepLR(optimizer, step_size=10, gamma=0.1)  # Used to decay learning rate
+    scheduler = StepLR(optimizer, step_size=other_args.reduce_period, gamma=other_args.gamma)  # Used to decay learning rate
 
     # Resume training if possible
     start_epoch = 0
@@ -353,6 +353,8 @@ if __name__ == "__main__":
     parser.add_argument('--learning_rate', type=float, default=0.0001)
     parser.add_argument('--dropout', type=float, default=0.2)
     parser.add_argument('--optim', type=str, default='adam')
+    parser.add_argument('--gamma', type=int, default=0.5)
+    parser.add_argument('--reduce_period', type=int, default=20)
 
     # Dataset params
     parser.add_argument('--target', type=str, default='pa')
