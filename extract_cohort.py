@@ -130,7 +130,7 @@ def correct_image_dir(input_csv, output_csv, datadir):
         return x
 
     tqdm.pandas(desc="Correcting images path if needed")
-    # df = df.progress_apply(correct_image_dir_if_required, axis=1)
+    df = df.progress_apply(correct_image_dir_if_required, axis=1)
 
     def check_image_exists(x):
         return int(x['ImageDir']) != -1
