@@ -11,7 +11,7 @@ from torchvision.transforms import Compose
 
 from dataset import PCXRayDataset, Normalize, ToTensor, split_dataset
 from models import create_model
-from train_utils import evaluate_model
+from evaluate import get_model_preds
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -56,8 +56,8 @@ def test(data_dir, csv_path, splits_path, output_dir, target='pa',
     model.load_state_dict(torch.load(weights_file))
     model.eval()
 
-    y_true, y_preds, _ = evaluate_model(model, dataloader=testloader, target=target,
-                                        model_type=model_type, vote_at_test=misc.vote_at_test)
+    y_true, y_preds, _ = get_model_preds(model, dataloader=testloader, target=target,
+                                         model_type=model_type, vote_at_test=misc.vote_at_test, progress_bar=True)
 
     np.save(join(output_dir, "{}_preds_{}".format(target, seed)), y_preds)
     np.save(join(output_dir, "{}_true_{}".format(target, seed)), y_true)

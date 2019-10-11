@@ -1,12 +1,9 @@
 import argparse
 import os
-import pickle
 from os.path import join, exists, isfile
 
 import numpy as np
-import pandas as pd
 import torch
-from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_score
 from torch import nn
 from torch.optim import Adam, SGD, RMSprop
 from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau
@@ -14,10 +11,40 @@ from torch.utils.data import DataLoader
 from torchvision.transforms import Compose
 
 from dataset import PCXRayDataset, Normalize, ToTensor, RandomRotation, GaussianNoise, ToPILImage, split_dataset
+from evaluate import ModelEvaluator, get_model_preds
 from models import create_model
-from train_utils import evaluate_model
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+
+def create_opt_and_sched(params, lr, other_args):
+    # Optimizer
+    if 'adam' in other_args.optim:
+        use_amsgrad = 'amsgrad' in other_args.optim
+        Opt = Adam
+        if 'w' in other_args.optim:
+            try:
+                Opt = torch.optim.AdamW
+                print('Using AdamW')
+            except AttributeError:
+                pass
+        optimizer = Opt(params, lr=lr, weight_decay=other_args.weight_decay, amsgrad=use_amsgrad)
+
+    elif other_args.optim == 'rmsprop':
+        optimizer = RMSprop(params, lr=lr, weight_decay=other_args.weight_decay, momentum=other_args.momentum)
+
+    else:
+        optimizer = SGD(params, lr=lr, weight_decay=other_args.weight_decay,
+                        momentum=other_args.momentum, nesterov=other_args.nesterov)
+
+    if 'reduce' in other_args.sched:
+        scheduler = ReduceLROnPlateau(optimizer, factor=other_args.gamma, patience=other_args.reduce_period,
+                                      verbose=True, threshold=0.001)
+    else:
+        scheduler = StepLR(optimizer, step_size=other_args.reduce_period, gamma=other_args.gamma)
+
+    return optimizer, scheduler
+
 
 def train(data_dir, csv_path, splits_path, output_dir, target='pa',
           nb_epoch=100, learning_rate=(1e-4,), batch_size=1, optim='adam',
@@ -68,8 +95,9 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa',
                          architecture=architecture, dropout=dropout, otherargs=misc)
     model.to(DEVICE)
 
-    criterion = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(DEVICE))
+    evaluator = ModelEvaluator(output_dir=output_dir, target=target)
 
+    criterion = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(DEVICE))
     loss_weights = [1.0] + misc.loss_weights
     task_prob = [1 - misc.mt_task_prob, misc.mt_task_prob / 2., misc.mt_task_prob / 2.]
 
@@ -85,53 +113,25 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa',
             except IndexError:
                 temperature_lr = learning_rate[0]
             loss_weights = temperature.pow(-2)
-            optim_params.append({'params': temperature, 'lr':temperature_lr})
+            optim_params.append({'params': temperature, 'lr': temperature_lr})
     else:
         # one lr for all
         optim_params = [{'params': model.parameters(), 'lr': learning_rate[0]}]
 
     # Optimizer
-    if 'adam' in optim:
-        use_amsgrad = 'amsgrad' in optim
-        Opt = Adam
-        if 'w' in optim:
-            try:
-                Opt = torch.optim.AdamW
-                print('Using AdamW')
-            except AttributeError:
-                pass
-
-        optimizer = Opt(optim_params, lr=learning_rate[0], weight_decay=misc.weight_decay, amsgrad=use_amsgrad)
-    elif optim == 'rmsprop':
-        optimizer = RMSprop(optim_params, lr=learning_rate[0], weight_decay=misc.weight_decay, momentum=misc.momentum)
-    else:
-        optimizer = SGD(optim_params, lr=learning_rate[0], weight_decay=misc.weight_decay,
-                        momentum=misc.momentum, nesterov=misc.nesterov)
-
-    if 'reduce' in misc.sched:
-        scheduler = ReduceLROnPlateau(optimizer, factor=misc.gamma, patience=misc.reduce_period,
-                                      verbose=True, threshold=0.001)
-    else:
-        scheduler = StepLR(optimizer, step_size=misc.reduce_period, gamma=misc.gamma)
-
+    optimizer, scheduler = create_opt_and_sched(optim_params, learning_rate[0], misc)
     start_epoch = 1
-    store_dict = {'train_loss': [], 'val_loss': [], 'val_preds_all': [], 'val_auc': [], 'val_prc': []}
-    eval_df = pd.DataFrame(columns=['epoch', 'accuracy', 'auc', 'prc', 'loss'])
 
     # Resume training if possible
     latest_ckpt_file = join(output_dir, f'{target}-latest.tar')
-
     if isfile(latest_ckpt_file):
         with torch.load(latest_ckpt_file) as checkpoint:
             model.load_state_dict(checkpoint['model_state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
 
-        for metric in store_dict.keys():
-            with open(join(output_dir, f'{target}-{metric}.pkl'), 'rb') as f:
-                store_dict[metric] = pickle.load(f)
-        eval_df = pd.read_csv(join(output_dir, f'{target}-metrics.csv'))
-        start_epoch = int(eval_df.epoch.iloc[-1])
+        evaluator.load_saved()
+        start_epoch = int(evaluator.eval_df.epoch.iloc[-1])
         print(f"Resumed at epoch {start_epoch}")
 
     # Training loop
@@ -158,11 +158,9 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa',
                     all_task_losses.append(task_loss)
                     weighted_task_losses.append(task_loss * loss_weights[idx])
 
-
                 losses_dict = {0: sum(weighted_task_losses), 1: all_task_losses[1], 2: all_task_losses[2]}
-                select = np.random.choice([0,1,2], p=task_prob)
+                select = np.random.choice([0, 1, 2], p=task_prob)
                 loss = losses_dict[select]
-
                 if misc.learn_loss_coeffs:
                     loss += temperature.log().sum()
 
@@ -184,7 +182,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa',
             if (i + 1) % print_every == 0:
                 running_loss = running_loss.cpu().detach().numpy().squeeze() / print_every
                 print('[{0}, {1:5}] loss: {2:.5f}'.format(epoch + 1, i + 1, running_loss))
-                store_dict['train_loss'].append(running_loss)
+                evaluator.store_dict['train_loss'].append(running_loss)
                 running_loss = torch.zeros(1, requires_grad=False).to(DEVICE)
             del output, images, data
 
@@ -192,59 +190,26 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa',
         train_true = np.vstack(train_true)
 
         model.eval()
-        val_true, val_preds, val_runloss = evaluate_model(model, dataloader=valloader, loss_fn=criterion, target='joint',
-                                                          model_type=model_type, vote_at_test=misc.vote_at_test)
+        val_true, val_preds, val_runloss = get_model_preds(model, dataloader=valloader, loss_fn=criterion,
+                                                           target='joint', model_type=model_type,
+                                                           vote_at_test=misc.vote_at_test)
 
-
-        val_runloss = val_runloss.cpu().detach().numpy().squeeze() / (len(valset) / batch_size)
+        val_runloss /= (len(valset) / batch_size)
         print('Epoch {0} - Val loss = {1:.5f}'.format(epoch + 1, val_runloss))
-
-        val_auc = roc_auc_score(val_true, val_preds, average=None)
-        val_prc = average_precision_score(val_true, val_preds, average=None)
+        val_auc, _ = evaluator.evaluate_and_save(val_true, val_preds, epoch=epoch,
+                                                 train_true=train_true, train_preds=train_preds,
+                                                 runloss=val_runloss)
 
         if 'reduce' in misc.sched:
             scheduler.step(metrics=val_auc, epoch=epoch)
         else:
             scheduler.step(epoch=epoch)
 
-
-        print("Validation AUC, Train AUC and difference")
-        try:
-            train_auc = roc_auc_score(train_true, train_preds, average=None)
-        except:
-            print('Error in calculating train AUC')
-            train_auc = np.zeros_like(val_auc)
-
-        diff_train_val = val_auc - train_auc
-        diff_train_val = np.stack([val_auc, train_auc, diff_train_val], axis=-1)
-        print(diff_train_val.round(4))
-        print()
-
-        store_dict['val_prc'].append(val_prc)
-        store_dict['val_preds_all'].append(val_preds)
-        store_dict['val_auc'].append(val_auc)
-        store_dict['val_loss'].append(val_runloss)
-
-        for metric in store_dict.keys():
-            with open(join(output_dir, '{}-{}.pkl'.format(target, metric)), 'wb') as f:
-                pickle.dump(store_dict[metric], f)
-
-        metrics = {'epoch': epoch + 1,
-                   'accuracy': accuracy_score(val_true, np.where(val_preds > 0.5, 1, 0)),
-                   'auc': roc_auc_score(val_true, val_preds, average='weighted'),
-                   'prc': average_precision_score(val_true, val_preds, average='weighted'),
-                   'loss': running_loss}
-
-        eval_df = eval_df.append(metrics, ignore_index=True)
-        print(metrics)
-        eval_df.to_csv(join(output_dir, '{}-metrics.csv'.format(target)))
-
         _states = {'model_state_dict': model.state_dict(),
                    'optimizer_state_dict': optimizer.state_dict(),
                    'scheduler_state_dict': scheduler.state_dict()}
         torch.save(_states, latest_ckpt_file)
         torch.save(model.state_dict(), join(output_dir, '{}-e{}.pt'.format(target, epoch)))
-
 
 
 if __name__ == "__main__":
