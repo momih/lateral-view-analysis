@@ -74,21 +74,34 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
     criterion_L = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(DEVICE))
     criterion_PA = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(DEVICE))
 
+    loss_weights = [1.0] + misc.loss_weights
     if model_type in ['singletask', 'multitask', 'dualnet'] and len(learning_rate) > 1:
         # each branch has custom learning rate
         optim_params = [{'params': model.frontal_model.parameters(), 'lr': learning_rate[0]},
                         {'params': model.lateral_model.parameters(), 'lr': learning_rate[1]},
                         {'params': model.classifier.parameters(), 'lr': learning_rate[2]}]
+        if misc.learn_loss_coeffs:
+            temperature = torch.tensor(loss_weights, requires_grad=True, device=DEVICE).float()
+            try:
+                temperature_lr = learning_rate[3]
+            except IndexError:
+                temperature_lr = learning_rate[0]
+
+            optim_params.append({'params': temperature, 'lr':temperature_lr})
+            loss_weights = temperature.pow(-2)
     else:
         # one lr for all
         optim_params = [{'params': model.parameters(), 'lr': learning_rate[0]}]
 
+
+
     # Optimizer
     if 'adam' in optim:
         use_amsgrad = 'amsgrad' in optim
-        optimizer = Adam(optim_params, weight_decay=misc.weight_decay, amsgrad=use_amsgrad)
+        optimizer = Adam(optim_params, lr=learning_rate[0], weight_decay=misc.weight_decay, amsgrad=use_amsgrad)
     else:
-        optimizer = SGD(optim_params, weight_decay=misc.weight_decay, momentum=misc.momentum, nesterov=misc.nesterov)
+        optimizer = SGD(optim_params, lr=learning_rate[0], weight_decay=misc.weight_decay,
+                        momentum=misc.momentum, nesterov=misc.nesterov)
 
     scheduler = StepLR(optimizer, step_size=misc.reduce_period, gamma=misc.gamma)  # Used to decay learning rate
 
@@ -132,10 +145,12 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
             optimizer.zero_grad()
             if model_type == 'multitask':
                 joint_logit, frontal_logit, lateral_logit = output
-                loss_J = criterion(joint_logit, label)
-                loss_PA = criterion_PA(frontal_logit, label) * misc.loss_weights[0]
-                loss_L = criterion_L(lateral_logit, label) * misc.loss_weights[1]
+                loss_J = criterion(joint_logit, label) * loss_weights[0]
+                loss_PA = criterion_PA(frontal_logit, label) * loss_weights[1]
+                loss_L = criterion_L(lateral_logit, label) * loss_weights[2]
                 loss = loss_J + loss_L + loss_PA
+                if misc.learn_loss_coeffs:
+                    loss += temperature.log().sum()
                 output = joint_logit
             else:
                 loss = criterion(output, label)
@@ -293,6 +308,7 @@ if __name__ == "__main__":
                         help='For Multitask. Combine both views before or after pooling')
     parser.add_argument('--mt-join', dest='join', type=str, default='concat',
                         help='For Multitask. Combine views how? Valid options - concat, max, mean')
+    parser.add_argument('--learn-loss-coeffs', action='store_true', help='Learn the loss weights')
     parser.add_argument('--loss-weights', type=float, default=(0.3, 0.3), nargs=2,
                         help='For Multitask. Loss weights for regularizing loss. 1st is for PA, 2nd for L')
     parser.add_argument('--nesterov', action='store_true')
