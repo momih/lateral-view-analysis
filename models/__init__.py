@@ -4,7 +4,7 @@ from .joint import HeMIS, HeMISConcat, MultiViewCNN
 from .dropout import add_dropout
 
 
-def create_model(model_type, num_classes, target='joint', architecture='densenet', dropout=0.0, otherargs=None):
+def create_model(model_type, num_classes, target='joint', architecture='densenet121', dropout=0.0, otherargs=None):
     if target == 'joint':
         if model_type in ['singletask', 'multitask', 'dualnet']:
             multitask = model_type == 'multitask'
