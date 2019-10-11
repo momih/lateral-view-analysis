@@ -145,12 +145,12 @@ class HeMISConcat(HeMIS):
         return out
 
 
-class FrontalLateralMultiTask(nn.Module):
-    def __init__(self, num_classes=10, combine_at='prepool', join_how='concat', joint_only=False,
+class MultiViewCNN(nn.Module):
+    def __init__(self, num_classes=10, combine_at='prepool', join_how='concat', multitask=True,
                  drop_view_prob=0.0, architecture='densenet121'):
-        super(FrontalLateralMultiTask, self).__init__()
+        super(MultiViewCNN, self).__init__()
 
-        self.joint_only = joint_only
+        self.multitask = multitask
         self.drop_view_prob = [1 - drop_view_prob, drop_view_prob/2., drop_view_prob/2.]
         self.combine_at = combine_at
         self.join_how = join_how
@@ -207,12 +207,12 @@ class FrontalLateralMultiTask(nn.Module):
 
         joint_logit = self.classifier(joint)
 
-        if self.joint_only:
-            return joint_logit
-        else:
+        if self.multitask:
             pooled_frontal_features = self._pool(frontal_features)
             frontal_logit = self.frontal_model.classifier(pooled_frontal_features)
 
             pooled_lateral_features = self._pool(lateral_features)
             lateral_logit = self.lateral_model.classifier(pooled_lateral_features)
             return joint_logit, frontal_logit, lateral_logit
+        else:
+            return joint_logit

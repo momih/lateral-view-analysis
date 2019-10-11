@@ -2,7 +2,7 @@ import argparse
 import os
 import pickle
 from glob import glob
-from os.path import join, exists
+from os.path import join, exists, isfile
 
 import numpy as np
 import pandas as pd
@@ -17,11 +17,13 @@ from torchvision.transforms import Compose
 from dataset import PCXRayDataset, Normalize, ToTensor, RandomRotation, GaussianNoise, ToPILImage, split_dataset
 from models import create_model
 
+DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
 
 def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='pa',
-          nb_epoch=100, learning_rate=(1e-4), batch_size=1, optim='adam',
-          dropout=None, pretrained=False, min_patients_per_label=50, seed=666, data_augmentation=True,
-          model_type='hemis', architecture='densenet121', misc=None, threads=0):
+          nb_epoch=100, learning_rate=(1e-4,), batch_size=1, optim='adam',
+          dropout=None, min_patients_per_label=50, seed=666, data_augmentation=True,
+          model_type='hemis', architecture='densenet121', misc=None):
     assert target in ['pa', 'l', 'joint']
 
     torch.manual_seed(seed)
@@ -40,8 +42,7 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
         split_dataset(csv_path, splits_path, seed=seed)
 
     # Find device
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    print('Device that will be used is: {0}'.format(device))
+    print('Device that will be used is: {0}'.format(DEVICE))
 
     # Load data
     val_transfo = [Normalize(), ToTensor()]
@@ -50,134 +51,84 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
     else:
         train_transfo = val_transfo
 
-    trainset = PCXRayDataset(data_dir, csv_path, splits_path, transform=Compose(train_transfo), pretrained=pretrained,
-                             min_patients_per_label=min_patients_per_label, flat_dir=misc.flatdir)
+    dset_args = {'datadir': data_dir, 'csvpath': csv_path, 'splitpath': splits_path,
+                 'min_patients_per_label': min_patients_per_label, 'flat_dir': misc.flatdir}
+    loader_args = {'batch_size': batch_size, 'shuffle': True, 'num_workers': misc.threads, 'pin_memory': True}
 
-    print("predicting {} labels: {}".format(len(trainset.labels), trainset.labels))
-    trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True,
-                             num_workers=threads, pin_memory=True)
+    trainset = PCXRayDataset(transform=Compose(train_transfo), **dset_args)
+    valset = PCXRayDataset(transform=Compose(val_transfo), dataset='val', **dset_args)
 
-    valset = PCXRayDataset(data_dir, csv_path, splits_path, transform=Compose(val_transfo), dataset='val',
-                           pretrained=pretrained, min_patients_per_label=min_patients_per_label, flat_dir=misc.flatdir)
-    valloader = DataLoader(valset, batch_size=batch_size, shuffle=True,
-                           num_workers=threads, pin_memory=True)
+    trainloader = DataLoader(trainset, **loader_args)
+    valloader = DataLoader(valset, **loader_args)
 
-    print("{0} patients in training set.".format(len(trainset)))
-    print("{0} patients in validation set.".format(len(valset)))
+    print("Number of patients: {} train, {} valid.".format(len(trainset), len(valset)))
+    print("Predicting {} labels: {}".format(len(trainset.labels), trainset.labels))
+    print(trainset.labels_weights)
 
     # Load model
     model = create_model(model_type, num_classes=trainset.nb_labels, target=target,
                          architecture=architecture, dropout=dropout, otherargs=misc)
+    model.to(DEVICE)
 
-
-    print(trainset.labels_weights)
-
-    criterion = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(device))
-
-    if model_type == 'multitask':
-        criterion_L = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(device))
-        criterion_PA = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(device))
+    criterion = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(DEVICE))
+    criterion_L = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(DEVICE))
+    criterion_PA = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(DEVICE))
 
     if model_type in ['singletask', 'multitask', 'dualnet'] and len(learning_rate) > 1:
         # each branch has custom learning rate
         optim_params = [{'params': model.frontal_model.parameters(), 'lr': learning_rate[0]},
-                        {'params': model.lateral_model.parameters(), 'lr':learning_rate[1]}]
-        if model_type == 'multitask':
-            optim_params.append({'params': model.classifier.parameters(), 'lr': learning_rate[2]})
+                        {'params': model.lateral_model.parameters(), 'lr': learning_rate[1]},
+                        {'params': model.classifier.parameters(), 'lr': learning_rate[2]}]
     else:
         # one lr for all
         optim_params = [{'params': model.parameters(), 'lr': learning_rate[0]}]
-
-
 
     # Optimizer
     if 'adam' in optim:
         use_amsgrad = 'amsgrad' in optim
         optimizer = Adam(optim_params, weight_decay=misc.weight_decay, amsgrad=use_amsgrad)
     else:
-        optimizer = SGD(optim_params, weight_decay=misc.weight_decay,
-                        momentum=misc.momentum, nesterov=misc.nesterov)
+        optimizer = SGD(optim_params, weight_decay=misc.weight_decay, momentum=misc.momentum, nesterov=misc.nesterov)
 
     scheduler = StepLR(optimizer, step_size=misc.reduce_period, gamma=misc.gamma)  # Used to decay learning rate
 
+    start_epoch = 1
+    store_dict = {'train_loss': [], 'val_loss': [], 'val_preds_all': [], 'val_auc': [], 'val_prc': []}
+    eval_df = pd.DataFrame(columns=['epoch', 'accuracy', 'auc', 'prc', 'loss'])
+
     # Resume training if possible
-    start_epoch = 0
-    start_batch = 0
-    train_loss = []
-    val_loss = []
-    val_preds_all = []
-    val_auc = []
-    val_prc = []
-    metrics_df = pd.DataFrame(columns=['accuracy', 'auc', 'prc', 'loss', 'epoch', 'error'])
+    latest_ckpt_file = join(output_dir, f'{target}-latest.tar')
 
-    weights_files = glob(join(output_dir, '{}-e*.pt'.format(target)))  # Find all weights files
-    if len(weights_files):
-        # Find most recent epoch
-        epochs = np.array(
-            [int(w[len(join(output_dir, '{}-e'.format(target))):-len('.pt')].split('-')[0]) for w in weights_files])
-        start_epoch = epochs.max() + 1
-        weights_files = [weights_files[i] for i in np.argwhere(epochs == np.amax(epochs)).flatten()]
+    if isfile(latest_ckpt_file):
+        with torch.load(latest_ckpt_file) as checkpoint:
+            model.load_state_dict(checkpoint['model_state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
 
-        # Find most recent batch
-        if len(weights_files) > 1:
-            batches = np.array(
-                [int(w[len(join(output_dir, '{}-e'.format(target))):-len('.pt')].split('i')[1]) for w in weights_files])
-            start_batch = batches.max()
-            weights_file = weights_files[np.argmax(batches)]
-            start_epoch -= 1
-        else:
-            weights_file = weights_files[0]
-        model.load_state_dict(torch.load(weights_file))
-
-        with open(join(output_dir, '{}-train_loss.pkl'.format(target)), 'rb') as f:
-            train_loss = pickle.load(f)
-
-        with open(join(output_dir, '{}-val_preds.pkl'.format(target)), 'rb') as f:
-            val_preds_all = pickle.load(f)
-
-        with open(join(output_dir, '{}-val_loss.pkl'.format(target)), 'rb') as f:
-            val_loss = pickle.load(f)
-
-        with open(join(output_dir, '{}-val_auc.pkl'.format(target)), 'rb') as f:
-            val_auc = pickle.load(f)
-
-        with open(join(output_dir, '{}-val_prc.pkl'.format(target)), 'rb') as f:
-            val_prc = pickle.load(f)
-
-        metrics_df = pd.read_csv(join(output_dir, '{}-metrics.csv'.format(target)),
-                                 usecols=['accuracy', 'auc', 'prc', 'loss', 'epoch', 'error'], low_memory=False)
-
-        print("Resuming training at epoch {0}.".format(start_epoch))
-        print("Weights loaded: {0}".format(weights_file))
-
-    model.to(device)
+        for metric in store_dict.keys():
+            with open(join(output_dir, f'{target}-{metric}.pkl'), 'rb') as f:
+                store_dict[metric] = pickle.load(f)
+        eval_df = pd.read_csv(join(output_dir, f'{target}-metrics.csv'))
+        start_epoch = int(eval_df.epoch.iloc[-1])
+        print(f"Resumed at epoch {start_epoch}")
 
     # Training loop
     for epoch in range(start_epoch, nb_epoch):  # loop over the dataset multiple times
-        scheduler.step()
-
         model.train()
 
-        running_loss = torch.zeros(1, requires_grad=False, dtype=torch.float).to(device)
+        running_loss = torch.zeros(1, requires_grad=False, dtype=torch.float).to(DEVICE)
         train_preds = []
         train_true = []
         for i, data in enumerate(trainloader, 0):
-            # Skip to current batch
-            if epoch == start_epoch and i < start_batch:
-                continue
-
-            if target == 'pa':
-                input, label = data['PA'].to(device), data['encoded_labels'].to(device)
-            elif target == 'l':
-                input, label = data['L'].to(device), data['encoded_labels'].to(device)
-            else:
-                pa, l, label = data['PA'].to(device), data['L'].to(device), data['encoded_labels'].to(device)
-                input = [pa, l]
+            if target == 'joint':
+                *images, label = data['PA'].to(DEVICE), data['L'].to(DEVICE), data['encoded_labels'].to(DEVICE)
                 if model_type == 'stacked':
-                    input = torch.cat(input, dim=1)
+                    images = torch.cat(images, dim=1)
+            else:
+                images, label = data[target.upper()].to(DEVICE), data['encoded_labels'].to(DEVICE)
 
             # Forward
-            output = model(input)
+            output = model(images)
             optimizer.zero_grad()
             if model_type == 'multitask':
                 joint_logit, frontal_logit, lateral_logit = output
@@ -185,19 +136,17 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
                 loss_PA = criterion_PA(frontal_logit, label) * misc.loss_weights[0]
                 loss_L = criterion_L(lateral_logit, label) * misc.loss_weights[1]
                 loss = loss_J + loss_L + loss_PA
-
                 output = joint_logit
             else:
                 loss = criterion(output, label)
-            # loss = (loss * sample_weights / sample_weights.sum()).sum()
 
             # Backward
             loss.backward()
             optimizer.step()
 
             # Save predictions
-            train_preds.append(torch.sigmoid(output).detach().data.cpu().numpy())
-            train_true.append(label.data.detach().cpu().numpy())
+            train_preds.append(torch.sigmoid(output).detach().cpu().numpy())
+            train_true.append(label.detach().cpu().numpy())
 
             # print statistics
             running_loss += loss.detach().data
@@ -205,105 +154,102 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
             if (i + 1) % print_every == 0:
                 running_loss = running_loss.cpu().detach().numpy().squeeze() / print_every
                 print('[{0}, {1:5}] loss: {2:.5f}'.format(epoch + 1, i + 1, running_loss))
-                train_loss.append(running_loss)
+                store_dict['train_loss'].append(running_loss)
 
-                with open(join(output_dir, '{}-train_loss.pkl'.format(target)), 'wb') as f:
-                    pickle.dump(train_loss, f)
-                torch.save(model.state_dict(), join(output_dir, '{0}-e{1}-i{2}.pt'.format(target, epoch, i + 1)))
-                running_loss = torch.zeros(1, requires_grad=False).to(device)
-            del output
-            del input
-            del data
+                # with open(join(output_dir, '{}-train_loss.pkl'.format(target)), 'wb') as f:
+                #     pickle.dump(store_dict['train_loss'], f)
+                # torch.save(model.state_dict(), join(output_dir, '{0}-e{1}-i{2}.pt'.format(target, epoch, i + 1)))
+                running_loss = torch.zeros(1, requires_grad=False).to(DEVICE)
+            del output, images, data
 
         train_preds = np.vstack(train_preds)
         train_true = np.vstack(train_true)
 
         model.eval()
+        val_true, val_preds, val_runloss = validate(model, dataloader=valloader, loss_fn=criterion, target='joint',
+                                                    model_type=model_type, vote_at_test=misc.vote_at_test)
+        scheduler.step(epoch=epoch)
 
-        running_loss = torch.zeros(1, requires_grad=False, dtype=torch.float).to(device)
-        val_preds = []
-        val_true = []
-        for i, data in enumerate(valloader, 0):
-            if target == 'pa':
-                input, label = data['PA'].to(device), data['encoded_labels'].to(device)
-            elif target == 'l':
-                input, label = data['L'].to(device), data['encoded_labels'].to(device)
-            else:
-                pa, l, label = data['PA'].to(device), data['L'].to(device), data['encoded_labels'].to(device)
-                input = [pa, l]
-                if model_type == 'stacked':
-                    input = torch.cat(input, dim=1)
+        val_runloss = val_runloss.cpu().detach().numpy().squeeze() / (len(valset) / batch_size)
+        print('Epoch {0} - Val loss = {1:.5f}'.format(epoch + 1, val_runloss))
 
-            # Forward
-            output = model(input)
-            if model_type == 'multitask':
-                if misc.vote_at_test:
-                    output = torch.stack(output, dim=1).mean(dim=1)
-                else:
-                    output = output[0]
+        val_auc = roc_auc_score(val_true, val_preds, average=None)
+        val_prc = average_precision_score(val_true, val_preds, average=None)
 
-            running_loss += criterion(output, label).mean().detach().data
-
-            # Save predictions
-            val_preds.append(torch.sigmoid(output).data.cpu().numpy())
-            val_true.append(label.data.cpu().detach().numpy())
-            del output
-            del input
-            del data
-
-        running_loss = running_loss.cpu().detach().numpy().squeeze() / (len(valset) / batch_size)
-        val_loss.append(running_loss)
-        print('Epoch {0} - Val loss = {1:.5f}'.format(epoch + 1, running_loss))
-
-        val_preds = np.vstack(val_preds)
-        val_true = np.vstack(val_true)
-        val_preds_all.append(val_preds)
-        auc = roc_auc_score(val_true, val_preds, average=None)
-        val_auc.append(auc)
-
-        #TODO add options to print
         print("Validation AUC, Train AUC and difference")
         try:
             train_auc = roc_auc_score(train_true, train_preds, average=None)
         except:
             print('Error in calculating train AUC')
-            train_auc = np.zeros_like(auc)
+            train_auc = np.zeros_like(val_auc)
 
-        diff_train_val = auc - train_auc
-        diff_train_val = np.stack([auc, train_auc, diff_train_val], axis=-1)
+        diff_train_val = val_auc - train_auc
+        diff_train_val = np.stack([val_auc, train_auc, diff_train_val], axis=-1)
         print(diff_train_val.round(4))
         print()
 
-        prc = average_precision_score(val_true, val_preds, average=None)
-        val_prc.append(prc)
+        store_dict['val_prc'].append(val_prc)
+        store_dict['val_preds_all'].append(val_preds)
+        store_dict['val_auc'].append(val_auc)
+        store_dict['val_loss'].append(val_runloss)
 
-        metrics = {'accuracy': accuracy_score(val_true, np.where(val_preds > 0.5, 1, 0)),
+        for metric in store_dict.keys():
+            with open(join(output_dir, '{}-{}.pkl'.format(target, metric)), 'wb') as f:
+                pickle.dump(store_dict[metric], f)
+
+        metrics = {'epoch': epoch + 1,
+                   'accuracy': accuracy_score(val_true, np.where(val_preds > 0.5, 1, 0)),
                    'auc': roc_auc_score(val_true, val_preds, average='weighted'),
                    'prc': average_precision_score(val_true, val_preds, average='weighted'),
-                   'loss': running_loss, 'epoch': epoch + 1}
-        metrics_df = metrics_df.append(metrics, ignore_index=True)
+                   'loss': running_loss}
+
+        eval_df = eval_df.append(metrics, ignore_index=True)
         print(metrics)
+        eval_df.to_csv(join(output_dir, '{}-metrics.csv'.format(target)))
 
-        with open(join(output_dir, '{}-val_preds.pkl'.format(target)), 'wb') as f:
-            pickle.dump(val_preds_all, f)
-
-        with open(join(output_dir, '{}-val_loss.pkl'.format(target)), 'wb') as f:
-            pickle.dump(val_loss, f)
-
-        with open(join(output_dir, '{}-val_auc.pkl'.format(target)), 'wb') as f:
-            pickle.dump(val_auc, f)
-
-        with open(join(output_dir, '{}-val_prc.pkl'.format(target)), 'wb') as f:
-            pickle.dump(val_prc, f)
-
-        metrics_df.to_csv(join(output_dir, '{}-metrics.csv'.format(target)))
-
+        _states = {'model_state_dict': model.state_dict(),
+                   'optimizer_state_dict': optimizer.state_dict(),
+                   'scheduler_state_dict': scheduler.state_dict()}
+        torch.save(_states, latest_ckpt_file)
         torch.save(model.state_dict(), join(output_dir, '{}-e{}.pt'.format(target, epoch)))
 
-        # Remove all batches weights
-        weights_files = glob(join(output_dir, '{}-e{}-i*.pt'.format(target, epoch)))
-        for file in weights_files:
-            os.remove(file)
+        # # Remove all batches weights
+        # weights_files = glob(join(output_dir, '{}-e{}-i*.pt'.format(target, epoch)))
+        # for file in weights_files:
+        #     os.remove(file)
+        #
+
+
+def validate(model, dataloader, loss_fn, target='joint', model_type=None, vote_at_test=False):
+    with torch.no_grad():
+        runningloss = torch.zeros(1, requires_grad=False, dtype=torch.float).to(DEVICE)
+        y_preds, y_true = [], []
+        for data in dataloader:
+            if target == 'joint':
+                *images, label = data['PA'].to(DEVICE), data['L'].to(DEVICE), data['encoded_labels'].to(DEVICE)
+                if model_type == 'stacked':
+                    images = torch.cat(images, dim=1)
+            else:
+                images, label = data[target.upper()].to(DEVICE), data['encoded_labels'].to(DEVICE)
+
+            # Forward
+            output = model(images)
+            if model_type == 'multitask':
+                if vote_at_test:
+                    output = torch.stack(output, dim=1).mean(dim=1)
+                else:
+                    output = output[0]
+
+            runningloss += loss_fn(output, label).mean().detach().data
+
+            # Save predictions
+            y_preds.append(torch.sigmoid(output).detach().cpu().numpy())
+            y_true.append(label.detach().cpu().numpy())
+            del output, images, data
+
+    y_true = np.vstack(y_true)
+    y_preds = np.vstack(y_preds)
+    return y_true, y_preds, runningloss
 
 
 if __name__ == "__main__":
@@ -320,8 +266,7 @@ if __name__ == "__main__":
     # Model params
     parser.add_argument('--arch', type=str, default='densenet121')
     parser.add_argument('--model-type', type=str, default='hemis',
-                        help="Which joint model to pick: must be one of ['multitask', 'dualnet', 'stacked', 'hemis', 'concat']")
-    parser.add_argument('--pretrained', action='store_true')
+                        help="Which joint model: must be one of ['multitask', 'dualnet', 'stacked', 'hemis', 'concat']")
     parser.add_argument('--vote-at-test', action='store_true')
 
     # Hyperparams
@@ -337,22 +282,25 @@ if __name__ == "__main__":
     parser.add_argument('--target', type=str, default='pa')
     parser.add_argument('--min_patients', type=int, default=50)
     parser.add_argument('--seed', type=int, default=666)
-    parser.add_argument('--threads', type=int, default=0)
+    parser.add_argument('--threads', type=int, default=1)
 
     # Other optional arguments
-    parser.add_argument('--merge', type=int, default=3, help='For Hemis and HemisConcat. Merge modalities after N blocks')
-    parser.add_argument('--drop-view-prob', type=float, default=0.0, help='For Hemis, HemisConcat and Multitask. Drop either view with prob/2 and keep both views with 1-prob')
-    parser.add_argument('--mt-combine-at', dest='combine', type=str, default='prepool', help='For Multitask. Combine both views before or after pooling')
-    parser.add_argument('--mt-join', dest='join', type=str, default='concat', help='For Multitask. Combine views how? Valid options - concat, max, mean')
-    parser.add_argument('--loss-weights', type=float, default=(0.3, 0.3), nargs=2, help='For Multitask. Loss weights for regularizing loss. 1st is for PA, 2nd for L')
+    parser.add_argument('--merge', type=int, default=3,
+                        help='For Hemis and HemisConcat. Merge modalities after N blocks')
+    parser.add_argument('--drop-view-prob', type=float, default=0.0,
+                        help='For joint. Drop either view with p/2 and keep both views with 1-p')
+    parser.add_argument('--mt-combine-at', dest='combine', type=str, default='prepool',
+                        help='For Multitask. Combine both views before or after pooling')
+    parser.add_argument('--mt-join', dest='join', type=str, default='concat',
+                        help='For Multitask. Combine views how? Valid options - concat, max, mean')
+    parser.add_argument('--loss-weights', type=float, default=(0.3, 0.3), nargs=2,
+                        help='For Multitask. Loss weights for regularizing loss. 1st is for PA, 2nd for L')
     parser.add_argument('--nesterov', action='store_true')
     parser.add_argument('--momentum', default=0.0, type=float)
     parser.add_argument('--weight_decay', default=1e-5, type=float)
-
     parser.add_argument('--flatdir', action='store_false')
-
-
     args = parser.parse_args()
+
     np.set_printoptions(suppress=True, precision=4)
 
     if args.exp_name:
@@ -360,6 +308,6 @@ if __name__ == "__main__":
 
     print(args)
     train(args.data_dir, args.csv_path, args.splits_path, args.output_dir, logdir=args.logdir,
-          target=args.target, batch_size=args.batch_size, nb_epoch=args.epochs, pretrained=args.pretrained,
+          target=args.target, batch_size=args.batch_size, nb_epoch=args.epochs,
           learning_rate=args.learning_rate, min_patients_per_label=args.min_patients, dropout=args.dropout,
-          seed=args.seed, model_type=args.model_type, architecture=args.arch, misc=args, threads=args.threads)
+          seed=args.seed, model_type=args.model_type, architecture=args.arch, misc=args)

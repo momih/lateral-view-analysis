@@ -11,7 +11,7 @@ from torchvision.transforms import Compose
 from tqdm import tqdm
 
 from dataset import PCXRayDataset, Normalize, ToTensor, split_dataset
-from models import DenseNet, HeMIS, HeMISConcat, FrontalLateralMultiTask, ResNet
+from models import DenseNet, HeMIS, HeMISConcat, MultiViewCNN, ResNet
 from models import get_densenet_params, get_resnet_params
 
 
@@ -53,9 +53,9 @@ def test(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='p
     if target == 'joint':
         if model_type in ['singletask', 'multitask', 'dualnet']:
             joint_only = model_type != 'multitask'
-            model = FrontalLateralMultiTask(num_classes=testset.nb_labels, combine_at=other_args.combine,
-                                            join_how=other_args.join, drop_view_prob=other_args.drop_view_prob,
-                                            joint_only=joint_only, architecture=architecture)
+            model = MultiViewCNN(num_classes=testset.nb_labels, combine_at=other_args.combine,
+                                 join_how=other_args.join, drop_view_prob=other_args.drop_view_prob,
+                                 joint_only=joint_only, architecture=architecture)
         elif model_type == 'stacked':
             modelparams = get_densenet_params(architecture)
             model = DenseNet(num_classes=testset.nb_labels, in_channels=2, **modelparams)
