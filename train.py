@@ -9,7 +9,7 @@ import torch
 from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_score
 from torch import nn
 from torch.optim import Adam, SGD, RMSprop
-from torch.optim.lr_scheduler import StepLR
+from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from torchvision.transforms import Compose
 
@@ -108,7 +108,11 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
         optimizer = SGD(optim_params, lr=learning_rate[0], weight_decay=misc.weight_decay,
                         momentum=misc.momentum, nesterov=misc.nesterov)
 
-    scheduler = StepLR(optimizer, step_size=misc.reduce_period, gamma=misc.gamma)  # Used to decay learning rate
+    if 'reduce' in misc.sched:
+        scheduler = ReduceLROnPlateau(optimizer, factor=misc.gamma, patience=misc.reduce_period,
+                                      verbose=True, threshold=0.001)
+    else:
+        scheduler = StepLR(optimizer, step_size=misc.reduce_period, gamma=misc.gamma)
 
     start_epoch = 1
     store_dict = {'train_loss': [], 'val_loss': [], 'val_preds_all': [], 'val_auc': [], 'val_prc': []}
@@ -197,13 +201,19 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
         model.eval()
         val_true, val_preds, val_runloss = validate(model, dataloader=valloader, loss_fn=criterion, target='joint',
                                                     model_type=model_type, vote_at_test=misc.vote_at_test)
-        scheduler.step(epoch=epoch)
+
 
         val_runloss = val_runloss.cpu().detach().numpy().squeeze() / (len(valset) / batch_size)
         print('Epoch {0} - Val loss = {1:.5f}'.format(epoch + 1, val_runloss))
 
         val_auc = roc_auc_score(val_true, val_preds, average=None)
         val_prc = average_precision_score(val_true, val_preds, average=None)
+
+        if 'reduce' in misc.sched:
+            scheduler.step(metrics=val_auc, epoch=epoch)
+        else:
+            scheduler.step(epoch=epoch)
+
 
         print("Validation AUC, Train AUC and difference")
         try:
@@ -304,6 +314,7 @@ if __name__ == "__main__":
     parser.add_argument('--learning_rate', type=float, default=[0.0001], nargs='*')
     parser.add_argument('--dropout', type=float, default=0.2)
     parser.add_argument('--optim', type=str, default='adam')
+    parser.add_argument('--sched', type=str, default='steplr')
     parser.add_argument('--gamma', type=int, default=0.5)
     parser.add_argument('--reduce_period', type=int, default=20)
 
@@ -329,6 +340,7 @@ if __name__ == "__main__":
     parser.add_argument('--loss-weights', type=float, default=(0.3, 0.3), nargs=2,
                         help='For Multitask. Loss weights for regularizing loss. 1st is for PA, 2nd for L')
     parser.add_argument('--nesterov', action='store_true')
+
     parser.add_argument('--momentum', default=0.0, type=float)
     parser.add_argument('--weight_decay', default=1e-5, type=float)
     parser.add_argument('--flatdir', action='store_false')
