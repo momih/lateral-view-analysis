@@ -1,7 +1,6 @@
 import argparse
 import os
 import pickle
-from glob import glob
 from os.path import join, exists, isfile
 
 import numpy as np
@@ -9,7 +8,7 @@ import pandas as pd
 import torch
 from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_score
 from torch import nn
-from torch.optim import Adam, SGD
+from torch.optim import Adam, SGD, RMSprop
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torchvision.transforms import Compose
@@ -18,7 +17,6 @@ from dataset import PCXRayDataset, Normalize, ToTensor, RandomRotation, Gaussian
 from models import create_model
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
 
 def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='pa',
           nb_epoch=100, learning_rate=(1e-4,), batch_size=1, optim='adam',
@@ -71,34 +69,41 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
     model.to(DEVICE)
 
     criterion = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(DEVICE))
-    criterion_L = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(DEVICE))
-    criterion_PA = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(DEVICE))
 
     loss_weights = [1.0] + misc.loss_weights
+    task_prob = [1 - misc.mt_task_prob, misc.mt_task_prob / 2., misc.mt_task_prob / 2.]
+
     if model_type in ['singletask', 'multitask', 'dualnet'] and len(learning_rate) > 1:
         # each branch has custom learning rate
         optim_params = [{'params': model.frontal_model.parameters(), 'lr': learning_rate[0]},
                         {'params': model.lateral_model.parameters(), 'lr': learning_rate[1]},
                         {'params': model.classifier.parameters(), 'lr': learning_rate[2]}]
         if misc.learn_loss_coeffs:
-            temperature = torch.tensor(loss_weights, requires_grad=True, device=DEVICE).float()
+            temperature = torch.ones(size=(3,), requires_grad=True, device=DEVICE).float()
             try:
                 temperature_lr = learning_rate[3]
             except IndexError:
                 temperature_lr = learning_rate[0]
-
-            optim_params.append({'params': temperature, 'lr':temperature_lr})
             loss_weights = temperature.pow(-2)
+            optim_params.append({'params': temperature, 'lr':temperature_lr})
     else:
         # one lr for all
         optim_params = [{'params': model.parameters(), 'lr': learning_rate[0]}]
 
-
-
     # Optimizer
     if 'adam' in optim:
         use_amsgrad = 'amsgrad' in optim
-        optimizer = Adam(optim_params, lr=learning_rate[0], weight_decay=misc.weight_decay, amsgrad=use_amsgrad)
+        Opt = Adam
+        if 'w' in optim:
+            try:
+                Opt = torch.optim.AdamW
+                print('Using AdamW')
+            except AttributeError:
+                pass
+
+        optimizer = Opt(optim_params, lr=learning_rate[0], weight_decay=misc.weight_decay, amsgrad=use_amsgrad)
+    elif optim == 'rmsprop':
+        optimizer = RMSprop(optim_params, lr=learning_rate[0], weight_decay=misc.weight_decay, momentum=misc.momentum)
     else:
         optimizer = SGD(optim_params, lr=learning_rate[0], weight_decay=misc.weight_decay,
                         momentum=misc.momentum, nesterov=misc.nesterov)
@@ -144,14 +149,23 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
             output = model(images)
             optimizer.zero_grad()
             if model_type == 'multitask':
-                joint_logit, frontal_logit, lateral_logit = output
-                loss_J = criterion(joint_logit, label) * loss_weights[0]
-                loss_PA = criterion_PA(frontal_logit, label) * loss_weights[1]
-                loss_L = criterion_L(lateral_logit, label) * loss_weights[2]
-                loss = loss_J + loss_L + loss_PA
+                # order of returned logits is joint, frontal, lateral
+                all_task_losses = []
+                weighted_sum_loss = 0.
+                for idx, _logit in enumerate(output):
+                    task_loss = criterion(_logit, label)
+                    all_task_losses.append(task_loss)
+                    weighted_sum_loss += task_loss * loss_weights[idx]
+
+
+                losses_dict = {0: sum(weighted_sum_loss), 1: all_task_losses[1], 2: all_task_losses[2]}
+                select = np.random.choice([0,1,2], p=task_prob)
+                loss = losses_dict[select]
+
                 if misc.learn_loss_coeffs:
                     loss += temperature.log().sum()
-                output = joint_logit
+
+                output = output[0]
             else:
                 loss = criterion(output, label)
 
@@ -164,7 +178,7 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
             train_true.append(label.detach().cpu().numpy())
 
             # print statistics
-            running_loss += loss.detach().data
+            running_loss += loss.detach()
             print_every = max(1, len(trainset) // (20 * batch_size))
             if (i + 1) % print_every == 0:
                 running_loss = running_loss.cpu().detach().numpy().squeeze() / print_every
@@ -304,10 +318,13 @@ if __name__ == "__main__":
                         help='For Hemis and HemisConcat. Merge modalities after N blocks')
     parser.add_argument('--drop-view-prob', type=float, default=0.0,
                         help='For joint. Drop either view with p/2 and keep both views with 1-p')
+    parser.add_argument('--mt-task-prob', type=float, default=0.0,
+                        help='Curriculum learning probs. Drop either task with p/2 and keep both views with 1-p')
     parser.add_argument('--mt-combine-at', dest='combine', type=str, default='prepool',
                         help='For Multitask. Combine both views before or after pooling')
     parser.add_argument('--mt-join', dest='join', type=str, default='concat',
                         help='For Multitask. Combine views how? Valid options - concat, max, mean')
+
     parser.add_argument('--learn-loss-coeffs', action='store_true', help='Learn the loss weights')
     parser.add_argument('--loss-weights', type=float, default=(0.3, 0.3), nargs=2,
                         help='For Multitask. Loss weights for regularizing loss. 1st is for PA, 2nd for L')
