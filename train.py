@@ -1,10 +1,12 @@
+#!/usr/bin/env python
 import argparse
+import logging
 import os
 import pickle
 from glob import glob
 from os.path import join, exists
 
-import gc
+import mlflow
 import numpy as np
 import pandas as pd
 import torch
@@ -18,6 +20,11 @@ from torchvision.transforms import Compose
 from dataset import PCXRayDataset, Normalize, ToTensor, RandomRotation, GaussianNoise, ToPILImage, split_dataset
 from models import DenseNet, HeMIS, HeMISConcat, FrontalLateralMultiTask, ResNet
 from models import add_dropout, get_densenet_params, get_resnet_params
+
+from orion.client import report_results
+
+
+logger = logging.getLogger(__name__)
 
 
 def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='pa',
@@ -33,7 +40,7 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
     output_dir = join(logdir, output_dir)
     splits_path = splits_path.format(seed)
 
-    print("Training mode: {}".format(target))
+    logger.info("Training mode: {}".format(target))
 
     if not exists(output_dir):
         os.makedirs(output_dir)
@@ -43,7 +50,7 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
 
     # Find device
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    print('Device that will be used is: {0}'.format(device))
+    logger.info('Device that will be used is: {0}'.format(device))
 
     # Load data
     val_transfo = [Normalize(), ToTensor()]
@@ -55,7 +62,7 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
     trainset = PCXRayDataset(data_dir, csv_path, splits_path, transform=Compose(train_transfo), pretrained=pretrained,
                              min_patients_per_label=min_patients_per_label, flat_dir=other_args.flatdir)
     
-    print("predicting {} labels: {}".format(len(trainset.labels), trainset.labels))
+    logger.info("predicting {} labels: {}".format(len(trainset.labels), trainset.labels))
     trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True,
                              num_workers=threads, pin_memory=True)
 
@@ -64,8 +71,8 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
     valloader = DataLoader(valset, batch_size=batch_size, shuffle=True,
                            num_workers=threads, pin_memory=True)
 
-    print("{0} patients in training set.".format(len(trainset)))
-    print("{0} patients in validation set.".format(len(valset)))
+    logger.info("{0} patients in training set.".format(len(trainset)))
+    logger.info("{0} patients in validation set.".format(len(valset)))
 
     # Load model
     in_channels = 3 if pretrained else 1
@@ -99,12 +106,12 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
             model = DenseNet(num_classes=trainset.nb_labels, in_channels=in_channels, **modelparams)
             model_type = 'densenet'
     
-    print('Created {} model'.format(model_type))
+    logger.info('Created {} model'.format(model_type))
     # Add dropout
     if dropout:
         model = add_dropout(model, p=dropout, model=model_type)
 
-    print(trainset.labels_weights)
+    logger.info(trainset.labels_weights)
 
     criterion = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(device))
 
@@ -170,15 +177,16 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
         metrics_df = pd.read_csv(join(output_dir, '{}-metrics.csv'.format(target)),
                                  usecols=['accuracy', 'auc', 'prc', 'loss', 'epoch', 'error'], low_memory=False)
 
-        print("Resuming training at epoch {0}.".format(start_epoch))
-        print("Weights loaded: {0}".format(weights_file))
+        logger.info("Resuming training at epoch {0}.".format(start_epoch))
+        logger.info("Weights loaded: {0}".format(weights_file))
 
     model.to(device)
 
+    # Logging hparams
+    mlflow.log_param('learning_rate', learning_rate)
+
     # Training loop
     for epoch in range(start_epoch, nb_epoch):  # loop over the dataset multiple times
-        scheduler.step()
-
         model.train()
 
         running_loss = torch.zeros(1, requires_grad=False, dtype=torch.float).to(device)
@@ -217,6 +225,7 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
             # Backward
             loss.backward()
             optimizer.step()
+            scheduler.step()
 
             # Save predictions
             train_preds.append(torch.sigmoid(output).detach().data.cpu().numpy())
@@ -227,7 +236,7 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
             print_every = max(1, len(trainset) // (20 * batch_size))
             if (i + 1) % print_every == 0:
                 running_loss = running_loss.cpu().detach().numpy().squeeze() / print_every
-                print('[{0}, {1:5}] loss: {2:.5f}'.format(epoch + 1, i + 1, running_loss))
+                logger.info('[{0}, {1:5}] loss: {2:.5f}'.format(epoch + 1, i + 1, running_loss))
                 train_loss.append(running_loss)
 
                 with open(join(output_dir, '{}-train_loss.pkl'.format(target)), 'wb') as f:
@@ -276,7 +285,7 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
 
         running_loss = running_loss.cpu().detach().numpy().squeeze() / (len(valset) / batch_size)
         val_loss.append(running_loss)
-        print('Epoch {0} - Val loss = {1:.5f}'.format(epoch + 1, running_loss))
+        logger.info('Epoch {0} - Val loss = {1:.5f}'.format(epoch + 1, running_loss))
 
         val_preds = np.vstack(val_preds)
         val_true = np.vstack(val_true)
@@ -284,18 +293,17 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
         auc = roc_auc_score(val_true, val_preds, average=None)
         val_auc.append(auc)
         
-        #TODO add options to print
-        print("Validation AUC, Train AUC and difference")
+        # TODO add options to print
+        logger.info("Validation AUC, Train AUC and difference")
         try:
             train_auc = roc_auc_score(train_true, train_preds, average=None)
         except:
-            print('Error in calculating train AUC')
+            logger.error('Error in calculating train AUC')
             train_auc = np.zeros_like(auc)
 
         diff_train_val = auc - train_auc
         diff_train_val = np.stack([auc, train_auc, diff_train_val], axis=-1)
-        print(diff_train_val.round(4))
-        print()
+        logger.info(diff_train_val.round(4))
 
         prc = average_precision_score(val_true, val_preds, average=None)
         val_prc.append(prc)
@@ -303,9 +311,15 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
         metrics = {'accuracy': accuracy_score(val_true, np.where(val_preds > 0.5, 1, 0)),
                    'auc': roc_auc_score(val_true, val_preds, average='weighted'),
                    'prc': average_precision_score(val_true, val_preds, average='weighted'),
-                   'loss': running_loss, 'epoch': epoch + 1}
+                   'loss': running_loss,
+                   'epoch': epoch + 1}
         metrics_df = metrics_df.append(metrics, ignore_index=True)
-        print(metrics)
+        logger.info(metrics)
+
+        for k, v in metrics.items():
+            if k == 'epoch':
+                continue
+            mlflow.log_metric(k, v, step=epoch + 1)
 
         with open(join(output_dir, '{}-val_preds.pkl'.format(target)), 'wb') as f:
             pickle.dump(val_preds_all, f)
@@ -328,6 +342,8 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
         for file in weights_files:
             os.remove(file)
 
+    return metrics_df['loss'][-1]
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Usage')
@@ -337,6 +353,7 @@ if __name__ == "__main__":
     parser.add_argument('csv_path', type=str)
     parser.add_argument('splits_path', type=str)
     parser.add_argument('output_dir', type=str)
+    parser.add_argument('--log', type=str, default=None)
     parser.add_argument('--logdir', type=str, default='./logs')
     parser.add_argument('--exp_name', type=str, default=None)
 
@@ -372,15 +389,34 @@ if __name__ == "__main__":
     parser.add_argument('--momentum', default=0.0, type=float)
     parser.add_argument('--flatdir', action='store_false')
 
-
     args = parser.parse_args()
     np.set_printoptions(suppress=True, precision=4)
 
     if args.exp_name:
         args.output_dir = args.output_dir + "-" + args.exp_name
+
+    mlflow.set_experiment('lateral-view-analysis')
+    mlflow.start_run(run_name=f'lr{args.learning_rate}')
+
+    logging.basicConfig(level=logging.INFO)
+
+    # will log to a file if provided
+    if args.log is not None:
+        handler = logging.handlers.WatchedFileHandler(args.log)
+        formatter = logging.Formatter(logging.BASIC_FORMAT)
+        handler.setFormatter(formatter)
+        root = logging.getLogger()
+        root.setLevel(logging.INFO)
+        root.addHandler(handler)
     
-    print(args)
-    train(args.data_dir, args.csv_path, args.splits_path, args.output_dir, logdir=args.logdir,
-          target=args.target, batch_size=args.batch_size, nb_epoch=args.epochs, pretrained=args.pretrained,
-          learning_rate=args.learning_rate, min_patients_per_label=args.min_patients, dropout=args.dropout,
-          seed=args.seed, model_type=args.model_type, architecture=args.arch, other_args=args, threads=args.threads)
+    logger.info(args)
+    val_loss = train(args.data_dir, args.csv_path, args.splits_path, args.output_dir, logdir=args.logdir,
+                     target=args.target, batch_size=args.batch_size, nb_epoch=args.epochs, pretrained=args.pretrained,
+                     learning_rate=args.learning_rate, min_patients_per_label=args.min_patients, dropout=args.dropout,
+                     seed=args.seed, model_type=args.model_type, architecture=args.arch,
+                     other_args=args, threads=args.threads)
+
+    report_results([dict(
+        name='val_loss',
+        type='objective',
+        value=val_loss)])

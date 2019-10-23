@@ -11,6 +11,7 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 from tqdm import tqdm
 
+
 def split_dataset(csvpath: str, output: str, train=0.6, val=0.2, seed=666) -> None:
     """
     Split the data contained in csvpath in train/val/test, and write the results in output.
@@ -75,11 +76,10 @@ class PCXRayDataset(Dataset):
             labels = eval(subset.Clean_Labels.tolist()[0])
             labels = list(set(labels).intersection(to_keep))
             
-            return {'ImageDir':imagedir, 'ImageID':imageid, 'Labels':labels}
-        
+            return {'ImageDir': imagedir, 'ImageID': imageid, 'Labels': labels}
 
         self.metadata = self.df.groupby('PatientID').apply(lambda x: processdf(x, self.labels)).to_dict()
-        self.idx2pt = {idx:x for idx, x in enumerate(self.df.PatientID.unique())}
+        self.idx2pt = {idx: x for idx, x in enumerate(self.df.PatientID.unique())}
     
     @property    
     def targets(self):
@@ -145,23 +145,20 @@ class PCXRayDataset(Dataset):
 
         labels = []
         labels_count = []
-        other_counts = []
         for k, v in labels_dict.items():
             if k in self.exclude_labels:
-                print("excluding label {} which occured {} times".format(k,v))
+                print("excluding label {} which occured {} times".format(k, v))
                 continue            
             if v > self.threshold * 2:
                 labels.append(k)
                 labels_count.append(v)
 
-        
         self.labels = labels
         self.labels_count = labels_count
         self.labels_weights = torch.from_numpy(np.array([(len(self) / label)
                                                          for label in labels_count], dtype=np.float32))
         self.labels_weights = torch.clamp(self.labels_weights * 0.1, 1., 5.)
         self.nb_labels = len(self.labels)
-
 
 
 class Normalize(object):
