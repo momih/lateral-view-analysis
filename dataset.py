@@ -1,15 +1,17 @@
-import numpy as np
-from os.path import join
-import pandas as pd
+import logging
 import pickle
-from PIL import Image
+from os.path import join
 
-from sklearn.preprocessing import MultiLabelBinarizer
-
+import numpy as np
+import pandas as pd
 import torch
+from PIL import Image
+from sklearn.preprocessing import MultiLabelBinarizer
 from torch.utils.data import Dataset
 from torchvision import transforms
 from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
 
 
 def split_dataset(csvpath: str, output: str, train=0.6, val=0.2, seed=666) -> None:
@@ -95,7 +97,7 @@ class PCXRayDataset(Dataset):
             pa_path = join(self.datadir, pa_dir, data['ImageID']['PA'])
             files.append(pa_path)
 
-        print("Reading files")
+        logger.info("Reading files")
         imgs = np.stack([np.array(Image.open(path)) for path in tqdm(files)])
         imgs = np.expand_dims(imgs, -1)
         return imgs
@@ -147,7 +149,7 @@ class PCXRayDataset(Dataset):
         labels_count = []
         for k, v in labels_dict.items():
             if k in self.exclude_labels:
-                print("excluding label {} which occured {} times".format(k, v))
+                logger.info("excluding label {} which occured {} times".format(k, v))
                 continue            
             if v > self.threshold * 2:
                 labels.append(k)
@@ -241,7 +243,7 @@ if __name__ == '__main__':
 
     split_dataset(cohort_file, split_file)
     dataset = PCXRayDataset(img_dir, cohort_file, split_file)
-    print(dataset.labels_weights)
-    print(dataset.labels_count)
+    logger.info(dataset.labels_weights)
+    logger.info(dataset.labels_count)
     for i in range(100):
-        print(dataset[i]['sample_weight'])
+        logger.info(dataset[i]['sample_weight'])

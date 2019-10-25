@@ -52,6 +52,16 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     logger.info('Device that will be used is: {0}'.format(device))
 
+    # Logging hparams
+    mlflow.log_param('model_type', model_type)
+    mlflow.log_param('target', target)
+    mlflow.log_param('seed', seed)
+    mlflow.log_param('optimizer', optim)
+    mlflow.log_param('learning_rate', learning_rate)
+    mlflow.log_param('gamma', other_args.gamma)
+    mlflow.log_param('reduce_period', other_args.reduce_period)
+    mlflow.log_param('dropout', dropout)
+
     # Load data
     val_transfo = [Normalize(), ToTensor()]
     if data_augmentation:
@@ -91,7 +101,7 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
             model = HeMISConcat(num_classes=trainset.nb_labels, in_channels=1, merge_at=other_args.merge,
                                 drop_view_prob=other_args.drop_view_prob)
         
-        else: # Default HeMIS
+        else:  # Default HeMIS
             model = HeMIS(num_classes=trainset.nb_labels, in_channels=1, merge_at=other_args.merge,
                           drop_view_prob=other_args.drop_view_prob)
             model_type = 'hemis'
@@ -128,7 +138,8 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
         optimizer = SGD(model.parameters(), lr=learning_rate, weight_decay=1e-5,
                         momentum=other_args.momentum, nesterov=other_args.nesterov)
 
-    scheduler = StepLR(optimizer, step_size=other_args.reduce_period, gamma=other_args.gamma)  # Used to decay learning rate
+    scheduler = StepLR(optimizer, step_size=other_args.reduce_period, gamma=other_args.gamma)
+    # Used to decay learning rate
 
     # Resume training if possible
     start_epoch = 0
@@ -181,9 +192,6 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
         logger.info("Weights loaded: {0}".format(weights_file))
 
     model.to(device)
-
-    # Logging hparams
-    mlflow.log_param('learning_rate', learning_rate)
 
     # Training loop
     for epoch in range(start_epoch, nb_epoch):  # loop over the dataset multiple times
@@ -317,8 +325,6 @@ def train(data_dir, csv_path, splits_path, output_dir, logdir='./logs', target='
         logger.info(metrics)
 
         for k, v in metrics.items():
-            if k == 'epoch':
-                continue
             mlflow.log_metric(k, v, step=epoch + 1)
 
         with open(join(output_dir, '{}-val_preds.pkl'.format(target)), 'wb') as f:
@@ -360,7 +366,8 @@ if __name__ == "__main__":
     # Model params
     parser.add_argument('--arch', type=str, default='densenet121')
     parser.add_argument('--model-type', type=str, default='hemis', 
-                        help="Which joint model to pick: must be one of ['multitask', 'dualnet', 'stacked', 'hemis', 'concat']")
+                        help="Which joint model to pick: must be one of "
+                             "['multitask', 'dualnet', 'stacked', 'hemis', 'concat']")
     parser.add_argument('--pretrained', action='store_true')
     parser.add_argument('--vote-at-test', action='store_true')
 
@@ -370,7 +377,7 @@ if __name__ == "__main__":
     parser.add_argument('--learning_rate', type=float, default=0.0001)
     parser.add_argument('--dropout', type=float, default=0.2)
     parser.add_argument('--optim', type=str, default='adam')
-    parser.add_argument('--gamma', type=int, default=0.5)
+    parser.add_argument('--gamma', type=float, default=0.5)
     parser.add_argument('--reduce_period', type=int, default=20)
 
     # Dataset params
@@ -380,11 +387,17 @@ if __name__ == "__main__":
     parser.add_argument('--threads', type=int, default=0)
 
     # Other optional arguments
-    parser.add_argument('--merge', type=int, default=3, help='For Hemis and HemisConcat. Merge modalities after N blocks')
-    parser.add_argument('--drop-view-prob', type=float, default=0.0, help='For Hemis, HemisConcat and Multitask. Drop either view with prob/2 and keep both views with 1-prob')
-    parser.add_argument('--mt-combine-at', dest='combine', type=str, default='prepool', help='For Multitask. Combine both views before or after pooling')
-    parser.add_argument('--mt-join', dest='join', type=str, default='concat', help='For Multitask. Combine views how? Valid options - concat, max, mean')
-    parser.add_argument('--loss-weights', type=float, default=(0.3, 0.3), nargs=2, help='For Multitask. Loss weights for regularizing loss. 1st is for PA, 2nd for L')
+    parser.add_argument('--merge', type=int, default=3,
+                        help='For Hemis and HemisConcat. Merge modalities after N blocks')
+    parser.add_argument('--drop-view-prob', type=float, default=0.0,
+                        help='For Hemis, HemisConcat and Multitask. Drop either '
+                             'view with prob/2 and keep both views with 1-prob')
+    parser.add_argument('--mt-combine-at', dest='combine', type=str, default='prepool',
+                        help='For Multitask. Combine both views before or after pooling')
+    parser.add_argument('--mt-join', dest='join', type=str, default='concat',
+                        help='For Multitask. Combine views how? Valid options - concat, max, mean')
+    parser.add_argument('--loss-weights', type=float, default=(0.3, 0.3), nargs=2,
+                        help='For Multitask. Loss weights for regularizing loss. 1st is for PA, 2nd for L')
     parser.add_argument('--nesterov', action='store_true')
     parser.add_argument('--momentum', default=0.0, type=float)
     parser.add_argument('--flatdir', action='store_false')
@@ -395,8 +408,14 @@ if __name__ == "__main__":
     if args.exp_name:
         args.output_dir = args.output_dir + "-" + args.exp_name
 
+    if args.dropout >= 1:
+        args.dropout /= 10.
+
+    if args.data_dir == "CLUSTER":
+        args.data_dir = os.environ.get('DATADIR')
+
     mlflow.set_experiment('lateral-view-analysis')
-    mlflow.start_run(run_name=f'lr{args.learning_rate}')
+    mlflow.start_run(run_name=f'{args.model_type}-run{args.exp_name}')
 
     logging.basicConfig(level=logging.INFO)
 
