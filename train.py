@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 import argparse
-from glob import glob
 import logging
 import os
+from glob import glob
 from os.path import join, exists, isfile
 
 import mlflow
 import numpy as np
 import torch
+from orion.client import report_results
 from torch import nn
 from torch.optim import Adam, SGD, RMSprop
 from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau
@@ -19,8 +20,6 @@ from evaluate import ModelEvaluator, get_model_preds
 from models import create_model
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-from orion.client import report_results
 
 logger = logging.getLogger(__name__)
 
