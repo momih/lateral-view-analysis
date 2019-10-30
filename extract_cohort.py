@@ -115,7 +115,7 @@ cxr_labels = ['pneumonia', 'pleural effusion', 'consolidation', 'normal', 'cardi
 
 def correct_image_dir(input_csv, output_csv, datadir):
     df = pd.read_csv(input_csv, low_memory=False)
-    print("{0} images in dataset.".format(len(df)))
+    print(f"{len(df)} images in dataset.")
 
     # Some images don't exist
     def correct_image_dir_if_required(x):
@@ -129,18 +129,21 @@ def correct_image_dir(input_csv, output_csv, datadir):
                     break
         return x
 
+    tqdm.pandas(desc="Correcting images path if needed")
     df = df.progress_apply(correct_image_dir_if_required, axis=1)
 
     def check_image_exists(x):
         return int(x['ImageDir']) != -1
+
+    tqdm.pandas(desc="Dropping images that don't exist")
     images_exist = df[['ImageID', 'ImageDir']].progress_apply(check_image_exists, axis=1)
-    print("{} images don't exist and were dropped.".format(sum(~images_exist)))
+    print(f"{sum(~images_exist)} images don't exist and were dropped.")
     df = df.loc[images_exist]
 
     df.to_csv(output_csv, index=False)
 
 
-def get_cohort(input_csv, output_csv, datadir, broken_images_file=None):
+def get_cohort(input_csv, output_csv, datadir, broken_images_file=None, mode='joint'):
     tqdm.pandas()
     random.seed(9999)
 
@@ -149,8 +152,6 @@ def get_cohort(input_csv, output_csv, datadir, broken_images_file=None):
     usecols = ['ImageID', 'ImageDir', 'StudyDate_DICOM', 'StudyID', 'PatientID',
                'Projection', 'Pediatric', 'Rows_DICOM', 'Columns_DICOM', 'Labels']
     df = pd.read_csv(output_csv, usecols=usecols, low_memory=False)
-
-    print("{0} images in dataset.".format(len(df)))
 
     # Some pngs can't be read, we should remove them
     if broken_images_file is not None:
@@ -161,7 +162,10 @@ def get_cohort(input_csv, output_csv, datadir, broken_images_file=None):
         df = df.loc[~df.ImageID.isin(broken_images)]
 
     # Only keeping those images that are L or PA and removing pediatric patients
-    df = df.loc[(df.Projection.isin(['L', 'PA'])) & (df.Pediatric == 'No')]
+    if mode == 'joint':
+        df = df.loc[(df.Projection.isin(['L', 'PA'])) & (df.Pediatric == 'No')]
+    elif mode == 'pa':
+        df = df.loc[(df.Projection.isin(['PA'])) & (df.Pediatric == 'No')]
 
     # Removing duplicates
     df = df.drop_duplicates(subset=df.columns[1:]).drop(columns=['Pediatric'])
@@ -169,17 +173,17 @@ def get_cohort(input_csv, output_csv, datadir, broken_images_file=None):
     # Removing images that don't have labels
     df = df.dropna(subset=['Labels'])
 
-    # Some images don't exist
-    def check_image_exists(x):
-        img_path = join(datadir, str(int(x['ImageDir'])), x['ImageID'])
-        return exists(img_path)
-    images_exist = df[['ImageID', 'ImageDir']].progress_apply(check_image_exists, axis=1)
-    print("{} images don't exist and were dropped.".format(sum(~images_exist)))
-    df = df.loc[images_exist]
-
-    # Keeping only those IDS that have both PA and L
+    # Keeping only those IDS that meet our criteria
+    if mode == 'joint':
+        tqdm.pandas(desc="Keeping only studies that have both L and PA")
+    elif mode == 'pa':
+        tqdm.pandas(desc="Keeping only studies that have PA")
     projs = df.groupby('StudyID').Projection.progress_apply(lambda x: ",".join(x))
-    ids_to_keep = projs[projs.isin(['PA,L', 'L,PA'])].index
+
+    if mode == 'joint':
+        ids_to_keep = projs[projs.isin(['PA,L', 'L,PA'])].index
+    elif mode == 'pa':
+        ids_to_keep = projs[projs.isin(['PA'])].index
 
     df = df.loc[df.StudyID.isin(ids_to_keep)]
 
@@ -190,15 +194,18 @@ def get_cohort(input_csv, output_csv, datadir, broken_images_file=None):
         match = set(labels_to_remove.findall(x))
         return False if match else True
 
+    tqdm.pandas(desc="Removing images with bad labels")
     good_labels = df.Labels.apply(remove_bad_labels)
     df = df.loc[good_labels]
 
     # Keeping only the first study for a patient
+    tqdm.pandas(desc="Keeping only the first study for each patient")
     projs = df.groupby('PatientID').StudyDate_DICOM.progress_apply(lambda x: x.min())
     ids_to_keep = df.apply(lambda x: x.StudyDate_DICOM == projs[x.PatientID], axis=1)
     df = df.loc[ids_to_keep]
 
     # Some patients had multiple studies done the same day, so we pick randomly among those
+    tqdm.pandas(desc="Choosing which study to keep for patients with multiple studies the same day")
     projs = df.groupby('PatientID').StudyID.progress_apply(lambda x: random.choice(x.tolist()))
     ids_to_keep = df.apply(lambda x: x.StudyID == projs[x.PatientID], axis=1)
     df = df.loc[ids_to_keep]
@@ -217,13 +224,15 @@ def get_cohort(input_csv, output_csv, datadir, broken_images_file=None):
             new_labels.remove('chronic changes')
         return new_labels
 
+    tqdm.pandas(desc="Mapping labels to their parent")
     df['Clean_Labels'] = df.Labels.progress_apply(convert_labels)
 
     # Remove images with non-existent labels
     def remove_bad_labels(x):
         return x != []
 
-    good_labels = df.Clean_Labels.apply(remove_bad_labels)
+    tqdm.pandas(desc="Removing images with unmappable labels")
+    good_labels = df.Clean_Labels.progress_apply(remove_bad_labels)
     df = df.loc[good_labels]
 
     # Removing images that don't have clean labels (typically, images with only 'chronic changes')
@@ -231,10 +240,13 @@ def get_cohort(input_csv, output_csv, datadir, broken_images_file=None):
 
     df.to_csv(output_csv, index=False)
 
-    print("{0} images in cohort from {1} patients.".format(len(df), len(df.PatientID.unique())))
+    print(f"{len(df)} images in cohort from {len(df.PatientID.unique())} patients.")
     check_study_patient = (len(df.StudyID.unique()) == len(df.PatientID.unique()))
-    check_study_image = (len(df.StudyID.unique()) * 2 == len(df))
-    print("Check: {} {}".format(check_study_patient, check_study_image))
+    print(f"Check if there is only one study per patient: {check_study_patient}")
+
+    if mode == 'joint':
+        check_study_image = (len(df.StudyID.unique()) * 2 == len(df))
+        print(f"Check if there is are exactly two images per patient: {check_study_image}")
 
 
 def labels_distribution(cohort):
@@ -300,7 +312,10 @@ if __name__ == '__main__':
     parser.add_argument('output_csv', type=str)
     parser.add_argument('datadir', type=str)
     parser.add_argument('-b', type=str, default=None)
+    parser.add_argument('--mode', type=str, default="joint")
     args = parser.parse_args()
 
-    get_cohort(args.input_csv, args.output_csv, args.datadir, args.b)
+    mode = args.mode
+
+    get_cohort(args.input_csv, args.output_csv, args.datadir, args.b, mode)
     # labels_distribution(cohort_file)
