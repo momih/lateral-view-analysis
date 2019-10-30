@@ -31,7 +31,6 @@ def create_model(model_type, num_classes, target='joint', architecture='densenet
             model = DenseNet(num_classes=num_classes, in_channels=1, **modelparams)
             model_type = 'densenet'
 
-    print('Created {} model'.format(model_type))
     # Add dropout
     if dropout:
         model = add_dropout(model, p=dropout, model=model_type)

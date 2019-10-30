@@ -11,7 +11,8 @@ DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class ModelEvaluator:
-    def __init__(self, output_dir, target):
+    def __init__(self, output_dir, target, logger):
+        self.logger = logger
         self.target = target
         self.output_dir = output_dir
         self.store_dict = {'train_loss': [], 'val_loss': [], 'val_preds_all': [], 'val_auc': [], 'val_prc': []}
@@ -27,17 +28,16 @@ class ModelEvaluator:
         val_auc = roc_auc_score(y_true, y_pred, average=None)
         val_prc = average_precision_score(y_true, y_pred, average=None)
 
-        print("Validation AUC, Train AUC and difference")
+        self.logger.info("Validation AUC, Train AUC and difference")
         try:
             train_auc = roc_auc_score(train_true, train_preds, average=None)
         except:
-            print('Error in calculating train AUC')
+            self.logger.info('Error in calculating train AUC')
             train_auc = np.zeros_like(val_auc)
 
         diff_train_val = val_auc - train_auc
         diff_train_val = np.stack([val_auc, train_auc, diff_train_val], axis=-1)
-        print(diff_train_val.round(4))
-        print()
+        self.logger.info(diff_train_val.round(4))
 
         self.store_dict['val_prc'].append(val_prc)
         self.store_dict['val_preds_all'].append(y_pred)
@@ -53,7 +53,7 @@ class ModelEvaluator:
                    'auc': roc_auc_score(y_true, y_pred, average='weighted'),
                    'prc': average_precision_score(y_true, y_pred, average='weighted'),
                    'loss': runloss}
-        print(metrics)
+        self.logger.info(metrics)
 
         eval_df = self.eval_df.append(metrics, ignore_index=True)
         eval_df.to_csv(join(self.output_dir, '{}-metrics.csv'.format(self.target)), index=False)

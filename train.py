@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import argparse
-import glob
+from glob import glob
 import logging
 import os
 from os.path import join, exists, isfile
@@ -113,9 +113,9 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa',
     model = create_model(model_type, num_classes=trainset.nb_labels, target=target,
                          architecture=architecture, dropout=dropout, otherargs=misc)
     model.to(DEVICE)
-    logger.info('Created {} model'.format(model_type))  # TODO
+    logger.info('Created {} model'.format(model_type))
 
-    evaluator = ModelEvaluator(output_dir=output_dir, target=target)
+    evaluator = ModelEvaluator(output_dir=output_dir, target=target, logger=logger)
 
     criterion = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(DEVICE))
     loss_weights = [1.0] + misc.loss_weights
@@ -236,7 +236,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa',
         for file in weights_files:
             os.remove(file)
 
-    return evaluator.eval_df['loss'][-1]  # TODO check and convert print to logger
+    return evaluator.eval_df['loss'].iloc[-1]
 
 
 if __name__ == "__main__":
@@ -248,7 +248,6 @@ if __name__ == "__main__":
     parser.add_argument('splits_path', type=str)
     parser.add_argument('output_dir', type=str)
     parser.add_argument('--log', type=str, default=None)
-    parser.add_argument('--logdir', type=str, default='./logs')  # TODO remove
     parser.add_argument('--exp_name', type=str, default=None)
 
     # Model params
@@ -328,7 +327,4 @@ if __name__ == "__main__":
                      learning_rate=args.learning_rate, min_patients_per_label=args.min_patients, dropout=args.dropout,
                      seed=args.seed, model_type=args.model_type, architecture=args.arch, misc=args)
 
-    report_results([dict(
-        name='val_loss',
-        type='objective',
-        value=val_loss)])
+    report_results([dict(name='val_loss', type='objective', value=val_loss)])
