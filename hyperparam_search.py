@@ -5,54 +5,26 @@ import os
 from glob import glob
 from os.path import join, exists, isfile
 
+import mlflow
 import numpy as np
 import torch
+from orion.client import report_results
 from torch import nn
-from torch.optim import Adam, SGD, RMSprop
-from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from torchvision.transforms import Compose
 
 from dataset import PCXRayDataset, Normalize, ToTensor, RandomRotation, GaussianNoise, ToPILImage, split_dataset
 from evaluate import ModelEvaluator, get_model_preds
 from models import create_model
+from train import create_opt_and_sched
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 logger = logging.getLogger(__name__)
 
 
-def create_opt_and_sched(optim, params, lr, other_args):
-    # Optimizer
-    if 'adam' in optim:
-        use_amsgrad = 'amsgrad' in optim
-        Opt = Adam
-        if 'w' in optim:
-            try:
-                Opt = torch.optim.AdamW
-                print('Using AdamW')
-            except AttributeError:
-                pass
-        optimizer = Opt(params, lr=lr, weight_decay=other_args.weight_decay, amsgrad=use_amsgrad)
-
-    elif optim == 'rmsprop':
-        optimizer = RMSprop(params, lr=lr, weight_decay=other_args.weight_decay, momentum=other_args.momentum)
-
-    else:
-        optimizer = SGD(params, lr=lr, weight_decay=other_args.weight_decay,
-                        momentum=other_args.momentum, nesterov=other_args.nesterov)
-
-    if 'reduce' in other_args.sched:
-        scheduler = ReduceLROnPlateau(optimizer, factor=other_args.gamma, patience=other_args.reduce_period,
-                                      verbose=True, threshold=0.001)
-    else:
-        scheduler = StepLR(optimizer, step_size=other_args.reduce_period, gamma=other_args.gamma)
-
-    return optimizer, scheduler
-
-
-def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100, lr=(1e-4,), batch_size=1,
-          optim='adam', dropout=None, min_patients_per_label=50, seed=666, data_augmentation=True, model_type='hemis',
+def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100, learning_rate=(1e-4,), batch_size=1,
+          dropout=None, optim='adam', min_patients_per_label=50, seed=666, data_augmentation=True, model_type='hemis',
           architecture='densenet121', misc=None):
     assert target in ['pa', 'l', 'joint']
 
@@ -62,7 +34,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     output_dir = output_dir.format(seed)
     splits_path = splits_path.format(seed)
 
-    logger.info(f"Training mode: {target}")
+    logger.info("Training mode: {}".format(target))
 
     if not exists(output_dir):
         os.makedirs(output_dir)
@@ -71,7 +43,18 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
         split_dataset(csv_path, splits_path, seed=seed)
 
     # Find device
-    logger.info(f'Device that will be used is: {DEVICE}')
+    print('Device that will be used is: {0}'.format(DEVICE))
+    logger.info('Device that will be used is: {0}'.format(DEVICE))
+
+    # Logging hparams
+    mlflow.log_param('model_type', model_type)
+    mlflow.log_param('target', target)
+    mlflow.log_param('seed', seed)
+    mlflow.log_param('optimizer', optim)
+    mlflow.log_param('learning_rate', learning_rate)
+    mlflow.log_param('gamma', misc.gamma)
+    mlflow.log_param('reduce_period', misc.reduce_period)
+    mlflow.log_param('dropout', dropout)
 
     # Load data
     val_transfo = [Normalize(), ToTensor()]
@@ -90,15 +73,15 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     trainloader = DataLoader(trainset, **loader_args)
     valloader = DataLoader(valset, **loader_args)
 
-    logger.info(f"Number of patients: {len(trainset)} train, {len(valset)} valid.")
-    logger.info(f"Predicting {len(trainset.labels)} labels: {trainset.labels}")
+    logger.info("Number of patients: {} train, {} valid.".format(len(trainset), len(valset)))
+    logger.info("Predicting {} labels: {}".format(len(trainset.labels), trainset.labels))
     logger.info(trainset.labels_weights)
 
     # Load model
     model = create_model(model_type, num_classes=trainset.nb_labels, target=target,
                          architecture=architecture, dropout=dropout, otherargs=misc)
     model.to(DEVICE)
-    logger.info(f'Created {model_type} model')
+    logger.info('Created {} model'.format(model_type))
 
     evaluator = ModelEvaluator(output_dir=output_dir, target=target, logger=logger)
 
@@ -106,25 +89,25 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     loss_weights = [1.0] + misc.loss_weights
     task_prob = [1 - misc.mt_task_prob, misc.mt_task_prob / 2., misc.mt_task_prob / 2.]
 
-    if model_type in ['singletask', 'multitask', 'dualnet'] and len(lr) > 1:
+    if model_type in ['singletask', 'multitask', 'dualnet'] and len(learning_rate) > 1:
         # each branch has custom learning rate
-        optim_params = [{'params': model.frontal_model.parameters(), 'lr': lr[0]},
-                        {'params': model.lateral_model.parameters(), 'lr': lr[1]},
-                        {'params': model.classifier.parameters(), 'lr': lr[2]}]
+        optim_params = [{'params': model.frontal_model.parameters(), 'lr': learning_rate[0]},
+                        {'params': model.lateral_model.parameters(), 'lr': learning_rate[1]},
+                        {'params': model.classifier.parameters(), 'lr': learning_rate[2]}]
         if misc.learn_loss_coeffs:
             temperature = torch.ones(size=(3,), requires_grad=True, device=DEVICE).float()
             try:
-                temperature_lr = lr[3]
+                temperature_lr = learning_rate[3]
             except IndexError:
-                temperature_lr = lr[0]
+                temperature_lr = learning_rate[0]
             loss_weights = temperature.pow(-2)
             optim_params.append({'params': temperature, 'lr': temperature_lr})
     else:
         # one lr for all
-        optim_params = [{'params': model.parameters(), 'lr': lr[0]}]
+        optim_params = [{'params': model.parameters(), 'lr': learning_rate[0]}]
 
     # Optimizer
-    optimizer, scheduler = create_opt_and_sched(optim=optim, params=optim_params, lr=lr[0], other_args=misc)
+    optimizer, scheduler = create_opt_and_sched(optim=optim, params=optim_params, lr=learning_rate[0], other_args=misc)
     start_epoch = 1
 
     # Resume training if possible
@@ -200,7 +183,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
                                                            vote_at_test=misc.vote_at_test)
 
         val_runloss /= (len(valset) / batch_size)
-        logger.info(f'Epoch {epoch + 1} - Val loss = {val_runloss:.5f}')
+        logger.info('Epoch {0} - Val loss = {1:.5f}'.format(epoch + 1, val_runloss))
         val_auc, _ = evaluator.evaluate_and_save(val_true, val_preds, epoch=epoch,
                                                  train_true=train_true, train_preds=train_preds,
                                                  runloss=val_runloss)
@@ -220,6 +203,8 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
         weights_files = glob(join(output_dir, '{}-e{}-i*.pt'.format(target, epoch)))
         for file in weights_files:
             os.remove(file)
+
+    return evaluator.eval_df['loss'].iloc[-1]
 
 
 if __name__ == "__main__":
@@ -290,6 +275,9 @@ if __name__ == "__main__":
     if args.data_dir == "CLUSTER":
         args.data_dir = os.environ.get('DATADIR')
 
+    mlflow.set_experiment('lateral-view-analysis')
+    mlflow.start_run(run_name=f'{args.model_type}-run{args.exp_name}')
+
     logging.basicConfig(level=logging.INFO)
 
     # will log to a file if provided
@@ -302,8 +290,9 @@ if __name__ == "__main__":
         root.addHandler(handler)
 
     logger.info(args)
-    train(data_dir=args.data_dir, csv_path=args.csv_path, splits_path=args.splits_path,
-          output_dir=args.output_dir, target=args.target, nb_epoch=args.epochs, lr=args.learning_rate,
-          batch_size=args.batch_size, optim=args.optim, dropout=args.dropout,
-          min_patients_per_label=args.min_patients, seed=args.seed, model_type=args.model_type,
-          architecture=args.arch, misc=args)
+    val_loss = train(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
+                     nb_epoch=args.epochs, learning_rate=args.learning_rate, batch_size=args.batch_size,
+                     dropout=args.dropout, optim=args.optim, min_patients_per_label=args.min_patients, seed=args.seed,
+                     model_type=args.model_type, architecture=args.arch, misc=args)
+
+    report_results([dict(name='val_loss', type='objective', value=val_loss)])
