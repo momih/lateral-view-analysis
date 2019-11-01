@@ -254,7 +254,7 @@ if __name__ == "__main__":
                         help='For Multitask. Combine views how? Valid options - concat, max, mean')
 
     parser.add_argument('--learn-loss-coeffs', action='store_true', help='Learn the loss weights')
-    parser.add_argument('--loss-weights', type=float, default=(0.3, 0.3), nargs=2,
+    parser.add_argument('--loss-weights', type=float, default=[0.3, 0.3], nargs=2,
                         help='For Multitask. Loss weights for regularizing loss. 1st is for PA, 2nd for L')
     parser.add_argument('--nesterov', action='store_true')
 

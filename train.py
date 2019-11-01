@@ -91,7 +91,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     valloader = DataLoader(valset, **loader_args)
 
     logger.info(f"Number of patients: {len(trainset)} train, {len(valset)} valid.")
-    logger.info(f"Predicting {len(trainset.labels)} labels: {trainset.labels}")
+    logger.info(f"Predicting {len(trainset.labels)} labels: \n{trainset.labels}")
     logger.info(trainset.labels_weights)
 
     # Load model
@@ -111,17 +111,15 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
         optim_params = [{'params': model.frontal_model.parameters(), 'lr': lr[0]},
                         {'params': model.lateral_model.parameters(), 'lr': lr[1]},
                         {'params': model.classifier.parameters(), 'lr': lr[2]}]
-        if misc.learn_loss_coeffs:
-            temperature = torch.ones(size=(3,), requires_grad=True, device=DEVICE).float()
-            try:
-                temperature_lr = lr[3]
-            except IndexError:
-                temperature_lr = lr[0]
-            loss_weights = temperature.pow(-2)
-            optim_params.append({'params': temperature, 'lr': temperature_lr})
     else:
         # one lr for all
         optim_params = [{'params': model.parameters(), 'lr': lr[0]}]
+
+    if misc.learn_loss_coeffs:
+        temperature = torch.ones(size=(3,), requires_grad=True, device=DEVICE).float()
+        temperature_lr = lr[-1] if len(lr) > 3 else lr[0]
+        loss_weights = temperature.pow(-2)
+        optim_params.append({'params': temperature, 'lr': temperature_lr})
 
     # Optimizer
     optimizer, scheduler = create_opt_and_sched(optim=optim, params=optim_params, lr=lr[0], other_args=misc)
@@ -186,7 +184,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
             print_every = max(1, len(trainset) // (20 * batch_size))
             if (i + 1) % print_every == 0:
                 running_loss = running_loss.cpu().detach().numpy().squeeze() / print_every
-                logger.info('[{0}, {1:5}] loss: {2:.5f}'.format(epoch + 1, i + 1, running_loss))
+                logger.info('[{0}, {1:5}] loss: {2:.5f}'.format(epoch, i + 1, running_loss))
                 evaluator.store_dict['train_loss'].append(running_loss)
                 running_loss = torch.zeros(1, requires_grad=False).to(DEVICE)
             del output, images, data
@@ -200,7 +198,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
                                                            vote_at_test=misc.vote_at_test)
 
         val_runloss /= (len(valset) / batch_size)
-        logger.info(f'Epoch {epoch + 1} - Val loss = {val_runloss:.5f}')
+        logger.info(f'Epoch {epoch} - Val loss = {val_runloss:.5f}')
         val_auc, _ = evaluator.evaluate_and_save(val_true, val_preds, epoch=epoch,
                                                  train_true=train_true, train_preds=train_preds,
                                                  runloss=val_runloss)
@@ -269,13 +267,14 @@ if __name__ == "__main__":
                         help='For Multitask. Combine views how? Valid options - concat, max, mean')
 
     parser.add_argument('--learn-loss-coeffs', action='store_true', help='Learn the loss weights')
-    parser.add_argument('--loss-weights', type=float, default=(0.3, 0.3), nargs=2,
+    parser.add_argument('--loss-weights', type=float, default=[0.3, 0.3], nargs=2,
                         help='For Multitask. Loss weights for regularizing loss. 1st is for PA, 2nd for L')
     parser.add_argument('--nesterov', action='store_true')
 
     parser.add_argument('--momentum', default=0.0, type=float)
     parser.add_argument('--weight_decay', default=1e-5, type=float)
     parser.add_argument('--flatdir', action='store_false')
+    parser.add_argument('--print-every', default=20, type=int)
 
     args = parser.parse_args()
 
