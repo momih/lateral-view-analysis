@@ -165,11 +165,11 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
 
                 losses_dict = {0: sum(weighted_task_losses), 1: all_task_losses[1], 2: all_task_losses[2]}
                 select = np.random.choice([0, 1, 2], p=task_prob)
-                loss = losses_dict[select] # mixing this temp seems bad
-                
+                loss = losses_dict[select]  # mixing this temp seems bad
+
                 if misc.learn_loss_coeffs:
                     loss += temperature.log().sum()
-                    
+
                 output = output[0]
             else:
                 loss = criterion(output, label)
@@ -261,9 +261,9 @@ if __name__ == "__main__":
     parser.add_argument('--merge', type=int, default=3,
                         help='For Hemis and HemisConcat. Merge modalities after N blocks')
     parser.add_argument('--drop-view-prob', type=float, default=0.0,
-                        help='For joint. Drop either view with p/2 and keep both views with 1-p')
+                        help='For joint. Drop either view with p/2 and keep both views with 1-p. Disabled for multitask')
     parser.add_argument('--mt-task-prob', type=float, default=0.0,
-                        help='Curriculum learning probs. Drop either task with p/2 and keep both views with 1-p')
+                        help='Curriculum learning probs for multitask. Drop either task with p/2 and keep both views with 1-p')
     parser.add_argument('--mt-combine-at', dest='combine', type=str, default='prepool',
                         help='For Multitask. Combine both views before or after pooling')
     parser.add_argument('--mt-join', dest='join', type=str, default='concat',
