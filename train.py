@@ -118,7 +118,6 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     if misc.learn_loss_coeffs:
         temperature = torch.ones(size=(3,), requires_grad=True, device=DEVICE).float()
         temperature_lr = lr[-1] if len(lr) > 3 else lr[0]
-        loss_weights = temperature.pow(-2)
         optim_params.append({'params': temperature, 'lr': temperature_lr})
 
     # Optimizer
@@ -155,6 +154,9 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
             optimizer.zero_grad()
             if model_type == 'multitask':
                 # order of returned logits is joint, frontal, lateral
+                if misc.learn_loss_coeffs:
+                    loss_weights = temperature.pow(-2)
+
                 all_task_losses, weighted_task_losses = [], []
                 for idx, _logit in enumerate(output):
                     task_loss = criterion(_logit, label)
@@ -163,10 +165,11 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
 
                 losses_dict = {0: sum(weighted_task_losses), 1: all_task_losses[1], 2: all_task_losses[2]}
                 select = np.random.choice([0, 1, 2], p=task_prob)
-                loss = losses_dict[select]
+                loss = losses_dict[select] # mixing this temp seems bad
+                
                 if misc.learn_loss_coeffs:
                     loss += temperature.log().sum()
-
+                    
                 output = output[0]
             else:
                 loss = criterion(output, label)
