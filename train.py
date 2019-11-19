@@ -13,7 +13,8 @@ from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from torchvision.transforms import Compose
 
-from dataset import PCXRayDataset, Normalize, ToTensor, RandomRotation, RandomTranslate, GaussianNoise, ToPILImage, split_dataset
+from dataset import PCXRayDataset, Normalize, ToTensor, RandomRotation, RandomTranslate, GaussianNoise, ToPILImage, \
+    split_dataset
 from evaluate import ModelEvaluator, get_model_preds
 from models import create_model
 
@@ -260,7 +261,6 @@ if __name__ == "__main__":
     parser.add_argument('--sched', default='steplr')
     parser.add_argument('--reduce_period', type=int, default=20)
 
-
     # Dataset params
     parser.add_argument('--target', type=str, default='pa')
     parser.add_argument('--min_patients', type=int, default=50)
@@ -269,10 +269,10 @@ if __name__ == "__main__":
 
     # Data augmentation options
     parser.add_argument('--data-augmentation', type=bool, default=True)
-    parser.add_argument('--transforms', default=['rotation', 'translation',  'noise'], nargs='*')
+    parser.add_argument('--transforms', default=['rotation', 'translation', 'noise'], nargs='*')
     parser.add_argument('--rotation-degrees', type=int, default=5)
-    parser.add_argument('--translate', type=float, default=None, nargs=2, help="tuple of 2 fractions for width and height")
-
+    parser.add_argument('--translate', type=float, default=None, nargs=2,
+                        help="tuple of 2 fractions for width and height")
 
     # Other optional arguments
     parser.add_argument('--merge', type=int, default=3,
