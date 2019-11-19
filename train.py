@@ -13,7 +13,7 @@ from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from torchvision.transforms import Compose
 
-from dataset import PCXRayDataset, Normalize, ToTensor, RandomRotation, GaussianNoise, ToPILImage, split_dataset
+from dataset import PCXRayDataset, Normalize, ToTensor, RandomRotation, RandomTranslate, GaussianNoise, ToPILImage, split_dataset
 from evaluate import ModelEvaluator, get_model_preds
 from models import create_model
 
@@ -76,7 +76,16 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     # Load data
     val_transfo = [Normalize(), ToTensor()]
     if data_augmentation:
-        train_transfo = [Normalize(), ToPILImage(), RandomRotation(), ToTensor(), GaussianNoise()]
+        train_transfo = [Normalize(), ToPILImage()]
+        if 'rotation' in misc.transforms:
+            train_transfo.append(RandomRotation(degrees=misc.rotation_degrees))
+        if 'translation' in misc.transforms:
+            train_transfo.append(RandomTranslate(translate=misc.translate))
+
+        train_transfo.append(ToTensor())
+
+        if 'noise' in misc.transforms:
+            train_transfo.append(GaussianNoise())
     else:
         train_transfo = val_transfo
 
@@ -251,11 +260,19 @@ if __name__ == "__main__":
     parser.add_argument('--sched', default='steplr')
     parser.add_argument('--reduce_period', type=int, default=20)
 
+
     # Dataset params
     parser.add_argument('--target', type=str, default='pa')
     parser.add_argument('--min_patients', type=int, default=50)
     parser.add_argument('--seed', type=int, default=666)
     parser.add_argument('--threads', type=int, default=1)
+
+    # Data augmentation options
+    parser.add_argument('--data-augmentation', type=bool, default=True)
+    parser.add_argument('--transforms', default=['rotation', 'translation',  'noise'], nargs='*')
+    parser.add_argument('--rotation-degrees', type=int, default=5)
+    parser.add_argument('--translate', type=float, default=None, nargs=2, help="tuple of 2 fractions for width and height")
+
 
     # Other optional arguments
     parser.add_argument('--merge', type=int, default=3,
@@ -308,4 +325,4 @@ if __name__ == "__main__":
           output_dir=args.output_dir, target=args.target, nb_epoch=args.epochs, lr=args.learning_rate,
           batch_size=args.batch_size, optim=args.optim, dropout=args.dropout,
           min_patients_per_label=args.min_patients, seed=args.seed, model_type=args.model_type,
-          architecture=args.arch, misc=args)
+          architecture=args.arch, data_augmentation=args.data_augmentation, misc=args)
