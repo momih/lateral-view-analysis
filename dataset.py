@@ -34,7 +34,7 @@ def split_dataset(csvpath: str, output: str, train=0.6, val=0.2, seed=666) -> No
 
 
 class PCXRayDataset(Dataset):
-    def __init__(self, datadir, csvpath, splitpath, transform=None,
+    def __init__(self, datadir, csvpath, splitpath, transform=None, max_label_weight=5.,
                  dataset='train', pretrained=False, min_patients_per_label=50,
                  exclude_labels=["other", "normal", "no finding"], flat_dir=True):
         """
@@ -50,6 +50,8 @@ class PCXRayDataset(Dataset):
         self.threshold = min_patients_per_label
         self.exclude_labels = exclude_labels
         self.flat_dir = flat_dir
+        self.max_label_weight = max_label_weight
+
         self.df = pd.read_csv(csvpath)
 
         self._build_labels()
@@ -159,7 +161,7 @@ class PCXRayDataset(Dataset):
         self.labels_count = labels_count
         self.labels_weights = torch.from_numpy(np.array([(len(self) / label)
                                                          for label in labels_count], dtype=np.float32))
-        self.labels_weights = torch.clamp(self.labels_weights * 0.1, 1., 5.)
+        self.labels_weights = torch.clamp(self.labels_weights * 0.1, 1., self.max_label_weight)
         self.nb_labels = len(self.labels)
 
 

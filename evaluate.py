@@ -16,7 +16,7 @@ class ModelEvaluator:
         self.target = target
         self.output_dir = output_dir
         self.store_dict = {'train_loss': [], 'val_loss': [], 'val_preds_all': [], 'val_auc': [], 'val_prc': []}
-        self.eval_df = pd.DataFrame(columns=['epoch', 'accuracy', 'auc', 'prc', 'loss'])
+        self.eval_df = pd.DataFrame(columns=['epoch', 'avg_acc', 'pure_acc', 'auc', 'prc', 'loss'])
 
     def load_saved(self):
         for metric in self.store_dict.keys():
@@ -48,8 +48,16 @@ class ModelEvaluator:
             with open(join(self.output_dir, '{}-{}.pkl'.format(self.target, metric)), 'wb') as f:
                 pickle.dump(self.store_dict[metric], f)
 
+        y_pred_binary = np.where(y_pred > 0.5, 1, 0)
+        avg_acc_per_label = []
+        for i in range(y_true.shape[1]):
+            acc_of_label = accuracy_score(y_true[:, i], y_pred_binary[:, i])
+            avg_acc_per_label.append(acc_of_label)
+        avg_acc_per_label = np.mean(avg_acc_per_label)
+
         metrics = {'epoch': epoch + 1,
-                   'accuracy': accuracy_score(y_true, np.where(y_pred > 0.5, 1, 0)),
+                   'pure_acc': accuracy_score(y_true, y_pred_binary),
+                   'avg_acc': avg_acc_per_label,
                    'auc': roc_auc_score(y_true, y_pred, average='weighted'),
                    'prc': average_precision_score(y_true, y_pred, average='weighted'),
                    'loss': runloss}

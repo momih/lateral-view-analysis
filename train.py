@@ -78,8 +78,10 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     val_transfo = [Normalize(), ToTensor()]
     if data_augmentation:
         train_transfo = [Normalize(), ToPILImage()]
+
         if 'rotation' in misc.transforms:
             train_transfo.append(RandomRotation(degrees=misc.rotation_degrees))
+
         if 'translation' in misc.transforms:
             train_transfo.append(RandomTranslate(translate=misc.translate))
 
@@ -90,7 +92,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     else:
         train_transfo = val_transfo
 
-    dset_args = {'datadir': data_dir, 'csvpath': csv_path, 'splitpath': splits_path,
+    dset_args = {'datadir': data_dir, 'csvpath': csv_path, 'splitpath': splits_path, 'max_label_weight':misc.max_label_weight,
                  'min_patients_per_label': min_patients_per_label, 'flat_dir': misc.flatdir}
     loader_args = {'batch_size': batch_size, 'shuffle': True, 'num_workers': misc.threads, 'pin_memory': True}
 
@@ -266,6 +268,7 @@ if __name__ == "__main__":
     parser.add_argument('--min_patients', type=int, default=50)
     parser.add_argument('--seed', type=int, default=666)
     parser.add_argument('--threads', type=int, default=1)
+    parser.add_argument('--max_label_weight', default=5.0, type=float)
 
     # Data augmentation options
     parser.add_argument('--data-augmentation', type=bool, default=True)
