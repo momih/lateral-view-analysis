@@ -1,6 +1,7 @@
 import pickle
 from os.path import join
 
+import mlflow
 import numpy as np
 import pandas as pd
 import torch
@@ -37,7 +38,7 @@ class ModelEvaluator:
 
         diff_train_val = val_auc - train_auc
         diff_train_val = np.stack([val_auc, train_auc, diff_train_val], axis=-1)
-        self.logger.info(diff_train_val.round(4))
+        # self.logger.info(diff_train_val.round(4))
 
         self.store_dict['val_prc'].append(val_prc)
         self.store_dict['val_preds_all'].append(y_pred)
@@ -48,15 +49,18 @@ class ModelEvaluator:
             with open(join(self.output_dir, '{}-{}.pkl'.format(self.target, metric)), 'wb') as f:
                 pickle.dump(self.store_dict[metric], f)
 
-        metrics = {'epoch': epoch + 1,
+        metrics = {'epoch': epoch,
                    'accuracy': accuracy_score(y_true, np.where(y_pred > 0.5, 1, 0)),
                    'auc': roc_auc_score(y_true, y_pred, average='weighted'),
                    'prc': average_precision_score(y_true, y_pred, average='weighted'),
                    'loss': runloss}
         self.logger.info(metrics)
 
-        eval_df = self.eval_df.append(metrics, ignore_index=True)
-        eval_df.to_csv(join(self.output_dir, '{}-metrics.csv'.format(self.target)), index=False)
+        for k, v in metrics.items():
+            mlflow.log_metric(k, v, step=epoch)
+
+        self.eval_df = self.eval_df.append(metrics, ignore_index=True)
+        self.eval_df.to_csv(join(self.output_dir, '{}-metrics.csv'.format(self.target)), index=False)
         return val_auc, val_prc
 
 

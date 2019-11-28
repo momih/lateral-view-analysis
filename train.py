@@ -103,7 +103,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     evaluator = ModelEvaluator(output_dir=output_dir, target=target, logger=logger)
 
     criterion = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(DEVICE))
-    loss_weights = [1.0] + misc.loss_weights
+    loss_weights = [1.0] + list(misc.loss_weights)
     task_prob = [1 - misc.mt_task_prob, misc.mt_task_prob / 2., misc.mt_task_prob / 2.]
 
     if model_type in ['singletask', 'multitask', 'dualnet'] and len(lr) > 1:
@@ -138,7 +138,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
         logger.info(f"Resumed at epoch {start_epoch}")
 
     # Training loop
-    for epoch in range(start_epoch, nb_epoch):  # loop over the dataset multiple times
+    for epoch in range(start_epoch, nb_epoch + 1):  # loop over the dataset multiple times
         model.train()
         running_loss = torch.zeros(1, requires_grad=False, dtype=torch.float).to(DEVICE)
         train_preds, train_true = [], []
@@ -194,7 +194,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
 
         model.eval()
         val_true, val_preds, val_runloss = get_model_preds(model, dataloader=valloader, loss_fn=criterion,
-                                                           target='joint', model_type=model_type,
+                                                           target=target, model_type=model_type,
                                                            vote_at_test=misc.vote_at_test)
 
         val_runloss /= (len(valset) / batch_size)
