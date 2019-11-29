@@ -5,3 +5,6 @@ results/
 .ipynb_checkpoints
 .idea/
 __pycache__/
+mlruns/
+orion_working_dir/
+logs/

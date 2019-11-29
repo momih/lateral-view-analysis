@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import argparse
+import json
 import logging
 import os
 from glob import glob
@@ -35,7 +36,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     output_dir = output_dir.format(seed)
     splits_path = splits_path.format(seed)
 
-    logger.info("Training mode: {}".format(target))
+    logger.info(f"Training mode: {target}")
 
     if not exists(output_dir):
         os.makedirs(output_dir)
@@ -44,19 +45,24 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
         split_dataset(csv_path, splits_path, seed=seed)
 
     # Find device
-    print('Device that will be used is: {0}'.format(DEVICE))
-    logger.info('Device that will be used is: {0}'.format(DEVICE))
+    logger.info(f'Device that will be used is: {DEVICE}')
 
     # Logging hparams
     mlflow.log_param('model_type', model_type)
+    mlflow.log_param('architecture', architecture)
     mlflow.log_param('target', target)
     mlflow.log_param('seed', seed)
     mlflow.log_param('optimizer', optim)
-    mlflow.log_param('learning_rate', learning_rate)
+    for i, lr in enumerate(learning_rate):
+        mlflow.log_param(f'learning_rate_{i}', lr)
     mlflow.log_param('gamma', misc.gamma)
     mlflow.log_param('reduce_period', misc.reduce_period)
     mlflow.log_param('dropout', dropout)
     mlflow.log_param('max_label_weight', misc.max_label_weight)
+
+    if model_type == 'multitask':
+        mlflow.log_param('mt-task-prob', misc.mt_task_prob)
+        mlflow.log_param('mt-join', misc.join)
 
     # Load data
     val_transfo = [Normalize(), ToTensor()]
@@ -94,7 +100,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     model = create_model(model_type, num_classes=trainset.nb_labels, target=target,
                          architecture=architecture, dropout=dropout, otherargs=misc)
     model.to(DEVICE)
-    logger.info('Created {} model'.format(model_type))
+    logger.info(f'Created {model_type} model')
 
     evaluator = ModelEvaluator(output_dir=output_dir, target=target, logger=logger)
 
@@ -133,7 +139,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
         logger.info(f"Resumed at epoch {start_epoch}")
 
     # Training loop
-    for epoch in range(start_epoch, nb_epoch):  # loop over the dataset multiple times
+    for epoch in range(start_epoch, nb_epoch + 1):
         model.train()
         running_loss = torch.zeros(1, requires_grad=False, dtype=torch.float).to(DEVICE)
         train_preds, train_true = [], []
@@ -182,7 +188,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
             print_every = max(1, len(trainset) // (20 * batch_size))
             if (i + 1) % print_every == 0:
                 running_loss = running_loss.cpu().detach().numpy().squeeze() / print_every
-                logger.info('[{0}, {1:5}] loss: {2:.5f}'.format(epoch + 1, i + 1, running_loss))
+                logger.info(f'[{epoch}, {i + 1:5}] loss: {running_loss:.5f}')
                 evaluator.store_dict['train_loss'].append(running_loss)
                 running_loss = torch.zeros(1, requires_grad=False).to(DEVICE)
             del output, images, data
@@ -192,11 +198,11 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
 
         model.eval()
         val_true, val_preds, val_runloss = get_model_preds(model, dataloader=valloader, loss_fn=criterion,
-                                                           target='joint', model_type=model_type,
+                                                           target=target, model_type=model_type,
                                                            vote_at_test=misc.vote_at_test)
 
         val_runloss /= (len(valset) / batch_size)
-        logger.info('Epoch {0} - Val loss = {1:.5f}'.format(epoch + 1, val_runloss))
+        logger.info(f'Epoch {epoch} - Val loss = {val_runloss:.5f}')
         val_auc, _ = evaluator.evaluate_and_save(val_true, val_preds, epoch=epoch,
                                                  train_true=train_true, train_preds=train_preds,
                                                  runloss=val_runloss)
@@ -210,24 +216,25 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
                    'optimizer_state_dict': optimizer.state_dict(),
                    'scheduler_state_dict': scheduler.state_dict()}
         torch.save(_states, latest_ckpt_file)
-        torch.save(model.state_dict(), join(output_dir, '{}-e{}.pt'.format(target, epoch)))
+        torch.save(model.state_dict(), join(output_dir, f'{target}-e{epoch}.pt'))
 
         # Remove all batches weights
-        weights_files = glob(join(output_dir, '{}-e{}-i*.pt'.format(target, epoch)))
+        weights_files = glob(join(output_dir, f'{target}-e{epoch}-i*.pt'))
         for file in weights_files:
             os.remove(file)
 
-    return evaluator.eval_df['loss'].iloc[-1]
+    logger.info(evaluator.eval_df.auc.iloc[-1])
+    return - evaluator.eval_df.auc.iloc[-1]
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Usage')
 
     # Paths
-    parser.add_argument('data_dir', type=str)
-    parser.add_argument('csv_path', type=str)
-    parser.add_argument('splits_path', type=str)
-    parser.add_argument('output_dir', type=str)
+    parser.add_argument('--data_dir', type=str, required=True)
+    parser.add_argument('--csv_path', type=str, required=True)
+    parser.add_argument('--splits_path', type=str, required=True)
+    parser.add_argument('--output_dir', type=str, required=True)
     parser.add_argument('--log', type=str, default=None)
     parser.add_argument('--exp_name', type=str, default=None)
 
@@ -241,7 +248,7 @@ if __name__ == "__main__":
     # Hyperparams
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--epochs', type=int, default=100)
-    parser.add_argument('--learning_rate', type=float, default=[0.0001], nargs='*')
+    parser.add_argument('--learning_rate', type=str, default=[0.0001])
     parser.add_argument('--dropout', type=float, default=0.2)
     parser.add_argument('--optim', type=str, default='adam')
     parser.add_argument('--gamma', type=float, default=0.5)
@@ -296,8 +303,15 @@ if __name__ == "__main__":
     if args.data_dir == "CLUSTER":
         args.data_dir = os.environ.get('DATADIR')
 
-    mlflow.set_experiment('lateral-view-analysis')
-    mlflow.start_run(run_name=f'{args.model_type}-run{args.exp_name}')
+    if args.target != 'joint':
+        mlflow_name = args.target
+        exp_name = args.arch
+    else:
+        mlflow_name = args.model_type
+        exp_name = args.model_type
+
+    mlflow.set_experiment(f'lateral-view-{mlflow_name}')
+    mlflow.start_run(run_name=f'{exp_name}-run{args.exp_name}')
 
     logging.basicConfig(level=logging.INFO)
 
@@ -310,10 +324,12 @@ if __name__ == "__main__":
         root.setLevel(logging.INFO)
         root.addHandler(handler)
 
+    args.learning_rate = [float(lr) for lr in eval(args.learning_rate)]
+
     logger.info(args)
     val_loss = train(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
                      nb_epoch=args.epochs, learning_rate=args.learning_rate, batch_size=args.batch_size,
                      dropout=args.dropout, optim=args.optim, min_patients_per_label=args.min_patients, seed=args.seed,
                      model_type=args.model_type, architecture=args.arch, data_augmentation=args.data_augmentation, misc=args)
 
-    report_results([dict(name='val_loss', type='objective', value=val_loss)])
+    report_results([dict(name='val_auc', type='objective', value=val_loss)])
