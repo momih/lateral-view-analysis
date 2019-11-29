@@ -8,9 +8,8 @@ def create_model(model_type, num_classes, target='joint', architecture='densenet
     if target == 'joint':
         if model_type in ['singletask', 'multitask', 'dualnet']:
             multitask = model_type == 'multitask'
-            model = MultiViewCNN(num_classes=num_classes, combine_at=otherargs.combine,
-                                 join_how=otherargs.join, drop_view_prob=otherargs.drop_view_prob,
-                                 multitask=multitask, architecture=architecture)
+            model = MultiViewCNN(num_classes=num_classes, combine_at=otherargs.combine, join_how=otherargs.join,
+                                 multitask=multitask, drop_view_prob=otherargs.drop_view_prob, architecture=architecture)
         elif model_type == 'stacked':
             modelparams = get_densenet_params(architecture)
             model = DenseNet(num_classes=num_classes, in_channels=2, **modelparams)

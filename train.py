@@ -13,7 +13,8 @@ from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from torchvision.transforms import Compose
 
-from dataset import PCXRayDataset, Normalize, ToTensor, RandomRotation, GaussianNoise, ToPILImage, split_dataset
+from dataset import PCXRayDataset, Normalize, ToTensor, RandomRotation, RandomTranslate, GaussianNoise, ToPILImage, \
+    split_dataset
 from evaluate import ModelEvaluator, get_model_preds
 from models import create_model
 
@@ -76,11 +77,22 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     # Load data
     val_transfo = [Normalize(), ToTensor()]
     if data_augmentation:
-        train_transfo = [Normalize(), ToPILImage(), RandomRotation(), ToTensor(), GaussianNoise()]
+        train_transfo = [Normalize(), ToPILImage()]
+
+        if 'rotation' in misc.transforms:
+            train_transfo.append(RandomRotation(degrees=misc.rotation_degrees))
+
+        if 'translation' in misc.transforms:
+            train_transfo.append(RandomTranslate(translate=misc.translate))
+
+        train_transfo.append(ToTensor())
+
+        if 'noise' in misc.transforms:
+            train_transfo.append(GaussianNoise())
     else:
         train_transfo = val_transfo
 
-    dset_args = {'datadir': data_dir, 'csvpath': csv_path, 'splitpath': splits_path,
+    dset_args = {'datadir': data_dir, 'csvpath': csv_path, 'splitpath': splits_path, 'max_label_weight':misc.max_label_weight,
                  'min_patients_per_label': min_patients_per_label, 'flat_dir': misc.flatdir}
     loader_args = {'batch_size': batch_size, 'shuffle': True, 'num_workers': misc.threads, 'pin_memory': True}
 
@@ -118,7 +130,6 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     if misc.learn_loss_coeffs:
         temperature = torch.ones(size=(3,), requires_grad=True, device=DEVICE).float()
         temperature_lr = lr[-1] if len(lr) > 3 else lr[0]
-        loss_weights = temperature.pow(-2)
         optim_params.append({'params': temperature, 'lr': temperature_lr})
 
     # Optimizer
@@ -155,6 +166,9 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
             optimizer.zero_grad()
             if model_type == 'multitask':
                 # order of returned logits is joint, frontal, lateral
+                if misc.learn_loss_coeffs:
+                    loss_weights = temperature.pow(-2)
+
                 all_task_losses, weighted_task_losses = [], []
                 for idx, _logit in enumerate(output):
                     task_loss = criterion(_logit, label)
@@ -163,7 +177,8 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
 
                 losses_dict = {0: sum(weighted_task_losses), 1: all_task_losses[1], 2: all_task_losses[2]}
                 select = np.random.choice([0, 1, 2], p=task_prob)
-                loss = losses_dict[select]
+                loss = losses_dict[select]  # mixing this temp seems bad
+
                 if misc.learn_loss_coeffs:
                     loss += temperature.log().sum()
 
@@ -253,14 +268,22 @@ if __name__ == "__main__":
     parser.add_argument('--min_patients', type=int, default=50)
     parser.add_argument('--seed', type=int, default=666)
     parser.add_argument('--threads', type=int, default=1)
+    parser.add_argument('--max_label_weight', default=5.0, type=float)
+
+    # Data augmentation options
+    parser.add_argument('--data-augmentation', type=bool, default=True)
+    parser.add_argument('--transforms', default=['rotation', 'translation', 'noise'], nargs='*')
+    parser.add_argument('--rotation-degrees', type=int, default=5)
+    parser.add_argument('--translate', type=float, default=None, nargs=2,
+                        help="tuple of 2 fractions for width and height")
 
     # Other optional arguments
     parser.add_argument('--merge', type=int, default=3,
                         help='For Hemis and HemisConcat. Merge modalities after N blocks')
     parser.add_argument('--drop-view-prob', type=float, default=0.0,
-                        help='For joint. Drop either view with p/2 and keep both views with 1-p')
+                        help='For joint. Drop either view with p/2 and keep both views with 1-p. Disabled for multitask')
     parser.add_argument('--mt-task-prob', type=float, default=0.0,
-                        help='Curriculum learning probs. Drop either task with p/2 and keep both views with 1-p')
+                        help='Curriculum learning probs for multitask. Drop either task with p/2 and keep both views with 1-p')
     parser.add_argument('--mt-combine-at', dest='combine', type=str, default='prepool',
                         help='For Multitask. Combine both views before or after pooling')
     parser.add_argument('--mt-join', dest='join', type=str, default='concat',
@@ -305,4 +328,4 @@ if __name__ == "__main__":
           output_dir=args.output_dir, target=args.target, nb_epoch=args.epochs, lr=args.learning_rate,
           batch_size=args.batch_size, optim=args.optim, dropout=args.dropout,
           min_patients_per_label=args.min_patients, seed=args.seed, model_type=args.model_type,
-          architecture=args.arch, misc=args)
+          architecture=args.arch, data_augmentation=args.data_augmentation, misc=args)

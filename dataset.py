@@ -34,7 +34,7 @@ def split_dataset(csvpath: str, output: str, train=0.6, val=0.2, seed=666) -> No
 
 
 class PCXRayDataset(Dataset):
-    def __init__(self, datadir, csvpath, splitpath, transform=None,
+    def __init__(self, datadir, csvpath, splitpath, transform=None, max_label_weight=5.,
                  dataset='train', pretrained=False, min_patients_per_label=50,
                  exclude_labels=["other", "normal", "no finding"], flat_dir=True):
         """
@@ -50,6 +50,8 @@ class PCXRayDataset(Dataset):
         self.threshold = min_patients_per_label
         self.exclude_labels = exclude_labels
         self.flat_dir = flat_dir
+        self.max_label_weight = max_label_weight
+
         self.df = pd.read_csv(csvpath)
 
         self._build_labels()
@@ -68,26 +70,26 @@ class PCXRayDataset(Dataset):
                 self.df = self.df[self.df.PatientID.isin(test_ids)]
 
             self.df = self.df.reset_index()
-            
+
         self.df = self.df.sort_values('PatientID').reset_index(drop=True)
-        
+
         def processdf(subset, to_keep):
             imageid = dict(zip(subset.Projection, subset.ImageID))
             imagedir = dict(zip(subset.Projection, subset.ImageDir))
-            
+
             labels = eval(subset.Clean_Labels.tolist()[0])
             labels = list(set(labels).intersection(to_keep))
-            
+
             return {'ImageDir': imagedir, 'ImageID': imageid, 'Labels': labels}
 
         self.metadata = self.df.groupby('PatientID').apply(lambda x: processdf(x, self.labels)).to_dict()
         self.idx2pt = {idx: x for idx, x in enumerate(self.df.PatientID.unique())}
-    
-    @property    
+
+    @property
     def targets(self):
         targets = [self.metadata[pt]['Labels'] for pt in self.idx2pt.values()]
         return self.mb.transform(targets)
-    
+
     @property
     def data(self):
         files = []
@@ -101,15 +103,15 @@ class PCXRayDataset(Dataset):
         imgs = np.stack([np.array(Image.open(path)) for path in tqdm(files)])
         imgs = np.expand_dims(imgs, -1)
         return imgs
-        
+
     def __len__(self):
         return len(self.df.PatientID.unique())
-    
+
     def __getitem__(self, idx):
 
         pt_id = self.idx2pt[idx]
         data = self.metadata[pt_id]
-        
+
         labels = data['Labels']
         encoded_labels = self.mb.transform([labels]).squeeze()
 
@@ -120,7 +122,7 @@ class PCXRayDataset(Dataset):
         l_dir = str(int(data['ImageDir']['L'])) if not self.flat_dir else ''
         l_path = join(self.datadir, l_dir, data['ImageID']['L'])
         l_img = np.array(Image.open(l_path))[..., np.newaxis]
-        
+
         if self.pretrained:
             pa_img = np.repeat(pa_img, 3, axis=-1)
             l_img = np.repeat(l_img, 3, axis=-1)
@@ -150,7 +152,7 @@ class PCXRayDataset(Dataset):
         for k, v in labels_dict.items():
             if k in self.exclude_labels:
                 logger.info("excluding label {} which occured {} times".format(k, v))
-                continue            
+                continue
             if v > self.threshold * 2:
                 labels.append(k)
                 labels_count.append(v)
@@ -159,7 +161,7 @@ class PCXRayDataset(Dataset):
         self.labels_count = labels_count
         self.labels_weights = torch.from_numpy(np.array([(len(self) / label)
                                                          for label in labels_count], dtype=np.float32))
-        self.labels_weights = torch.clamp(self.labels_weights * 0.1, 1., 5.)
+        self.labels_weights = torch.clamp(self.labels_weights * 0.1, 1., self.max_label_weight)
         self.nb_labels = len(self.labels)
 
 
@@ -167,6 +169,7 @@ class Normalize(object):
     """
     Changes images values to be between -1 and 1.
     """
+
     def __call__(self, sample):
         pa_img, l_img = sample['PA'], sample['L']
 
@@ -184,6 +187,7 @@ class ToTensor(object):
     """
     Convert ndarrays in sample to Tensors.
     """
+
     def __call__(self, sample):
         to_tensor = transforms.ToTensor()
         sample['PA'] = to_tensor(sample['PA'])
@@ -196,6 +200,7 @@ class ToPILImage(object):
     """
     Convert ndarrays in sample to PIL images.
     """
+
     def __call__(self, sample):
         to_pil = transforms.ToPILImage()
         sample['PA'] = to_pil(sample['PA'])
@@ -208,6 +213,7 @@ class GaussianNoise(object):
     """
     Adds Gaussian noise to the PA and L (mean 0, std 0.05)
     """
+
     def __call__(self, sample):
         pa_img, l_img = sample['PA'], sample['L']
 
@@ -221,15 +227,34 @@ class GaussianNoise(object):
 
 class RandomRotation(object):
     """
-    Adds a random rotation to the PA and L (between -5 and +5).
+    Adds a random rotation to the PA and L.
     """
+
+    def __init__(self, degrees=5):
+        self.rot = transforms.RandomRotation(degrees=degrees)
+
     def __call__(self, sample):
         pa_img, l_img = sample['PA'], sample['L']
+        pa_img = self.rot(pa_img)
+        l_img = self.rot(l_img)
 
-        rot_amount = np.random.rand() * 5.
-        rot = transforms.RandomRotation(rot_amount)
-        pa_img = rot(pa_img)
-        l_img = rot(l_img)
+        sample['PA'] = pa_img
+        sample['L'] = l_img
+        return sample
+
+
+class RandomTranslate(object):
+    """
+    Adds a random translation to the PA and L.
+    """
+
+    def __init__(self, translate=None):
+        self.aff = transforms.RandomAffine(degrees=0, translate=translate)
+
+    def __call__(self, sample):
+        pa_img, l_img = sample['PA'], sample['L']
+        pa_img = self.aff(pa_img)
+        l_img = self.aff(l_img)
 
         sample['PA'] = pa_img
         sample['L'] = l_img

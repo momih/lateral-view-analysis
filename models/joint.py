@@ -152,6 +152,11 @@ class MultiViewCNN(nn.Module):
 
         self.multitask = multitask
         self.drop_view_prob = [1 - drop_view_prob, drop_view_prob/2., drop_view_prob/2.]
+        if multitask:
+            # Never drop view when multitask
+            # Use curriculum learning on loss instead
+            self.drop_view_prob = [1., 0., 0.]
+
         self.combine_at = combine_at
         self.join_how = join_how
 
