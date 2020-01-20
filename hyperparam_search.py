@@ -82,8 +82,9 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     else:
         train_transfo = val_transfo
 
-    dset_args = {'datadir': data_dir, 'csvpath': csv_path, 'splitpath': splits_path, 'max_label_weight':misc.max_label_weight,
-                 'min_patients_per_label': min_patients_per_label, 'flat_dir': misc.flatdir}
+    dset_args = {'datadir': data_dir, 'csvpath': csv_path, 'splitpath': splits_path,
+                 'max_label_weight': misc.max_label_weight, 'min_patients_per_label': min_patients_per_label,
+                 'flat_dir': misc.flatdir}
     loader_args = {'batch_size': batch_size, 'shuffle': True, 'num_workers': misc.threads, 'pin_memory': True}
 
     trainset = PCXRayDataset(transform=Compose(train_transfo), **dset_args)
@@ -330,6 +331,7 @@ if __name__ == "__main__":
     val_loss = train(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
                      nb_epoch=args.epochs, learning_rate=args.learning_rate, batch_size=args.batch_size,
                      dropout=args.dropout, optim=args.optim, min_patients_per_label=args.min_patients, seed=args.seed,
-                     model_type=args.model_type, architecture=args.arch, data_augmentation=args.data_augmentation, misc=args)
+                     model_type=args.model_type, architecture=args.arch, data_augmentation=args.data_augmentation,
+                     misc=args)
 
     report_results([dict(name='val_auc', type='objective', value=val_loss)])

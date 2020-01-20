@@ -27,14 +27,14 @@ def create_opt_and_sched(optim, params, lr, other_args):
     # Optimizer
     if 'adam' in optim:
         use_amsgrad = 'amsgrad' in optim
-        Opt = Adam
+        opt = Adam
         if 'w' in optim:
             try:
-                Opt = torch.optim.AdamW
+                opt = torch.optim.AdamW
                 print('Using AdamW')
             except AttributeError:
                 pass
-        optimizer = Opt(params, lr=lr, weight_decay=other_args.weight_decay, amsgrad=use_amsgrad)
+        optimizer = opt(params, lr=lr, weight_decay=other_args.weight_decay, amsgrad=use_amsgrad)
 
     elif optim == 'rmsprop':
         optimizer = RMSprop(params, lr=lr, weight_decay=other_args.weight_decay, momentum=other_args.momentum)
@@ -92,8 +92,9 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     else:
         train_transfo = val_transfo
 
-    dset_args = {'datadir': data_dir, 'csvpath': csv_path, 'splitpath': splits_path, 'max_label_weight':misc.max_label_weight,
-                 'min_patients_per_label': min_patients_per_label, 'flat_dir': misc.flatdir}
+    dset_args = {'datadir': data_dir, 'csvpath': csv_path, 'splitpath': splits_path,
+                 'max_label_weight': misc.max_label_weight, 'min_patients_per_label': min_patients_per_label,
+                 'flat_dir': misc.flatdir}
     loader_args = {'batch_size': batch_size, 'shuffle': True, 'num_workers': misc.threads, 'pin_memory': True}
 
     trainset = PCXRayDataset(transform=Compose(train_transfo), **dset_args)
@@ -281,9 +282,11 @@ if __name__ == "__main__":
     parser.add_argument('--merge', type=int, default=3,
                         help='For Hemis and HemisConcat. Merge modalities after N blocks')
     parser.add_argument('--drop-view-prob', type=float, default=0.0,
-                        help='For joint. Drop either view with p/2 and keep both views with 1-p. Disabled for multitask')
+                        help='For joint. Drop either view with p/2 and keep both views with 1-p. '
+                             'Disabled for multitask')
     parser.add_argument('--mt-task-prob', type=float, default=0.0,
-                        help='Curriculum learning probs for multitask. Drop either task with p/2 and keep both views with 1-p')
+                        help='Curriculum learning probs for multitask. '
+                             'Drop either task with p/2 and keep both views with 1-p')
     parser.add_argument('--mt-combine-at', dest='combine', type=str, default='prepool',
                         help='For Multitask. Combine both views before or after pooling')
     parser.add_argument('--mt-join', dest='join', type=str, default='concat',
