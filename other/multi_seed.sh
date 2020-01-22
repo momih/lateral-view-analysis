@@ -39,7 +39,7 @@ EPOCHS=40
 SEED=$SLURM_ARRAY_TASK_ID
 
 # PA DenseNet121
-./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name {trial.id} --seed $SEED --epochs $EPOCHS --model-type 'dualnet' --arch 'densenet121' --target 'pa' --batch_size 8 --learning_rate ['0.000586158'] --dropout 0 --optim 'adam'
+./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name best_pa_121_s_{} --seed $SEED --epochs $EPOCHS --model-type 'dualnet' --arch 'densenet121' --target 'pa' --batch_size 8 --learning_rate ['0.000586158'] --dropout 0 --optim 'adam'
 
 # PA DenseNet201
 # orion -v hunt -n lateral-view-pa --config orion_config.yaml ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name {trial.id} --seed $SEED --epochs $EPOCHS --model-type 'dualnet' --arch 'densenet201' --target 'pa' --batch_size 8 --learning_rate 'orion~loguniform(1e-5, 1e-3, shape=(1,))' --dropout 'orion~uniform(0, 5, discrete=True)' --optim 'adam' --log '{exp.working_dir}/{exp.name}_{trial.id}/exp.log'
