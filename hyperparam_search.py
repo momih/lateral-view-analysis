@@ -60,8 +60,10 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     mlflow.log_param('dropout', dropout)
     mlflow.log_param('max_label_weight', misc.max_label_weight)
 
-    if model_type == 'multitask':
+    if model_type in ['multitask', 'hemis']:
         mlflow.log_param('mt-task-prob', misc.mt_task_prob)
+
+    if model_type == 'multitask':
         mlflow.log_param('mt-join', misc.join)
 
     # Load data
