@@ -48,7 +48,7 @@ SEED=$SLURM_ARRAY_TASK_ID
 # ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name best_l_121_s_{} --seed $SEED --epochs $EPOCHS --model-type 'dualnet' --target 'l' --batch_size 8 --learning_rate ['0.000268387'] --dropout 2 --optim 'adam'
 
 # Stacked
-# ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name best_stacked_s_{} --seed $SEED --epochs $EPOCHS --model-type 'stacked' --target 'joint' --batch_size 8 --learning_rate ['0.000191423', '0.00010794319', '9.892179e-05'] --dropout 1 --optim 'adam'
+./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name best_stacked_s_{} --seed $SEED --epochs $EPOCHS --model-type 'stacked' --target 'joint' --batch_size 8 --learning_rate "['0.000191423', '0.00010794319', '9.892179e-05']" --dropout 1 --optim 'adam'
 
 # Hemis
 # ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name best_hemis_s_{} --seed $SEED --epochs $EPOCHS --model-type 'hemis' --target 'joint' --batch_size 8 --learning_rate ['0.00037861971213', '1.965659e-05', '2.800382e-05'] --dropout 1 --optim 'adam'
