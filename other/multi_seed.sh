@@ -51,13 +51,13 @@ SEED=$SLURM_ARRAY_TASK_ID
 # ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name best_stacked_s_{} --seed $SEED --epochs $EPOCHS --model-type 'stacked' --target 'joint' --batch_size 8 --learning_rate "['0.000191423', '0.00010794319', '9.892179e-05']" --dropout 1 --optim 'adam'
 
 # Hemis
-./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name best_hemis_s_{} --seed $SEED --epochs $EPOCHS --model-type 'hemis' --target 'joint' --batch_size 8 --learning_rate "['0.00037861971213', '1.965659e-05', '2.800382e-05']" --dropout 1 --optim 'adam'
+# ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name best_hemis_s_{} --seed $SEED --epochs $EPOCHS --model-type 'hemis' --target 'joint' --batch_size 8 --learning_rate "['0.00037861971213', '1.965659e-05', '2.800382e-05']" --dropout 1 --optim 'adam'
 
 # Hemis CL
 # orion -v hunt -n lateral-view-hemis2 --config orion_config.yaml ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name {trial.id} --seed $SEED --epochs $EPOCHS --model-type 'hemis' --target 'joint' --batch_size 8 --learning_rate 'orion~loguniform(1e-5, 1e-3, shape=3)' --dropout 'orion~uniform(0, 5, discrete=True)' --optim 'adam' --mt-task-prob 'orion~choices([0.1, 0.2, 0.3, 0.4, 0.5, 0.6])' --log '{exp.working_dir}/{exp.name}_{trial.id}/exp.log'
 
 # Joint DualNet
-# ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name best_dualnet_s_{} --seed $SEED --epochs $EPOCHS --model-type 'dualnet' --target 'joint' --batch_size 8 --learning_rate "['0.000298055004293', '0.00076431225830', '0.0002667413627']" --dropout 2 --optim 'adam'
+./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name best_dualnet_s_{} --seed $SEED --epochs $EPOCHS --model-type 'dualnet' --target 'joint' --batch_size 8 --learning_rate "['0.000298055004293', '0.00076431225830', '0.0002667413627']" --dropout 2 --optim 'adam'
 
 # Joint Multitask
 # ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name best_multitask_s_{} --seed $SEED --epochs $EPOCHS --model-type 'multitask' --target 'joint' --batch_size 8 --learning_rate "['9.364812e-05', '3.8587835e-05', '1.29720523e-05']" --dropout 1 --optim 'adam' --mt-task-prob 0.1 --mt-join 'mean'
