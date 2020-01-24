@@ -51,10 +51,10 @@ SEED=$SLURM_ARRAY_TASK_ID
 # ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name best_stacked_s_{} --seed $SEED --epochs $EPOCHS --model-type 'stacked' --target 'joint' --batch_size 8 --learning_rate "['0.000191423', '0.00010794319', '9.892179e-05']" --dropout 1 --optim 'adam'
 
 # Hemis
-./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name best_hemis_s_{} --seed $SEED --epochs $EPOCHS --model-type 'hemis' --target 'joint' --batch_size 8 --learning_rate "['0.00037861971213', '1.965659e-05', '2.800382e-05']" --dropout 1 --optim 'adam'
+# ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name best_hemis_s_{} --seed $SEED --epochs $EPOCHS --model-type 'hemis' --target 'joint' --batch_size 8 --learning_rate "['0.00037861971213', '1.965659e-05', '2.800382e-05']" --dropout 1 --optim 'adam'
 
 # Hemis CL
-# ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name best_hemis_cl_s_{} --seed $SEED --epochs $EPOCHS --model-type 'hemis' --target 'joint' --batch_size 8 --learning_rate "['0.000112839', '1.143442e-05', '0.000736911126']" --dropout 1 --optim 'adam' --mt-task-prob 0.5
+./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name best_hemis_cl_s_{} --seed $SEED --epochs $EPOCHS --model-type 'hemis' --target 'joint' --batch_size 8 --learning_rate "['0.000112839', '1.143442e-05', '0.000736911126']" --dropout 1 --optim 'adam' --mt-task-prob 0.5
 
 # DualNet
 # ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name best_dualnet_s_{} --seed $SEED --epochs $EPOCHS --model-type 'dualnet' --target 'joint' --batch_size 8 --learning_rate "['0.000298055004293', '0.00076431225830', '0.0002667413627']" --dropout 2 --optim 'adam'
