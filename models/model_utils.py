@@ -37,6 +37,6 @@ def add_dropout(net, p=0.1, model='densenet'):
     else:
         print('No dropout added')
         return net
-    
+
     net.classifier = add_dropout_rec(net.classifier, p=p)
     return net
