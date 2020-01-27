@@ -63,4 +63,4 @@ SEED=$SLURM_ARRAY_TASK_ID
 # ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name best_multitask_s_{} --seed $SEED --epochs $EPOCHS --model-type 'multitask' --target 'joint' --batch_size 8 --learning_rate "['0.00020967', '0.000187059', '0.00066381']" --dropout 2 --optim 'adam' --mt-task-prob 0.0 --mt-join 'concat'
 
 # Multitask CL
-./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name best_multitask_cl_s_{} --seed $SEED --epochs $EPOCHS --model-type 'multitask' --target 'joint' --batch_size 8 --learning_rate "['6.92756e-05', '9.489274e-05', '5.2364398e-05']" --dropout 1 --optim 'adam' --mt-task-prob 0.4 --mt-join 'concat'
+./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name best_multitask_cl_concat_s_{} --seed $SEED --epochs $EPOCHS --model-type 'multitask' --target 'joint' --batch_size 8 --learning_rate "['6.92756e-05', '9.489274e-05', '5.2364398e-05']" --dropout 1 --optim 'adam' --mt-task-prob 0.4 --mt-join 'concat'
