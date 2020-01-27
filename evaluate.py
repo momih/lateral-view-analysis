@@ -12,10 +12,12 @@ DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class ModelEvaluator:
-    def __init__(self, output_dir, target, logger):
-        self.logger = logger
-        self.target = target
+    def __init__(self, output_dir, target, logger, averaging='macro'):
         self.output_dir = output_dir
+        self.target = target
+        self.logger = logger
+        self.averaging = averaging
+
         self.store_dict = {'train_loss': [], 'val_loss': [], 'val_preds_all': [], 'val_auc': [], 'val_prc': []}
         self.eval_df = pd.DataFrame(columns=['epoch', 'avg_acc', 'pure_acc', 'auc', 'prc', 'loss'])
 
@@ -59,8 +61,8 @@ class ModelEvaluator:
         metrics = {'epoch': epoch + 1,
                    'pure_acc': accuracy_score(y_true, y_pred_binary),
                    'avg_acc': avg_acc_per_label,
-                   'auc': roc_auc_score(y_true, y_pred, average='weighted'),
-                   'prc': average_precision_score(y_true, y_pred, average='weighted'),
+                   'auc': roc_auc_score(y_true, y_pred, average=self.averaging),
+                   'prc': average_precision_score(y_true, y_pred, average=self.averaging),
                    'loss': runloss}
         self.logger.info(metrics)
 
@@ -72,17 +74,23 @@ class ModelEvaluator:
         return val_auc, val_prc
 
 
-def get_model_preds(model, dataloader, loss_fn=None, target='joint', model_type=None,
-                    vote_at_test=False, progress_bar=False):
+def get_model_preds(model, dataloader, loss_fn=None, target='joint', test_on='both',
+                    model_type=None, vote_at_test=False, progress_bar=False):
     with torch.no_grad():
         runningloss = torch.zeros(1, requires_grad=False, dtype=torch.float).to(DEVICE)
         y_preds, y_true = [], []
+
         if progress_bar:
             dataloader = tqdm(dataloader)
 
         for data in dataloader:
             if target == 'joint':
                 *images, label = data['PA'].to(DEVICE), data['L'].to(DEVICE), data['encoded_labels'].to(DEVICE)
+
+                if test_on in ['pa', 'l']:
+                    pa, l = images
+                    images = [torch.zeros_like(l), l] if test_on == 'l' else [pa, torch.zeros_like(pa)]
+
                 if model_type == 'stacked':
                     images = torch.cat(images, dim=1)
             else:
@@ -93,6 +101,8 @@ def get_model_preds(model, dataloader, loss_fn=None, target='joint', model_type=
             if model_type == 'multitask':
                 if vote_at_test:
                     output = torch.stack(output, dim=1).mean(dim=1)
+                elif test_on in ['pa', 'l']:
+                    output = output[2] if test_on == 'l' else output[1]
                 else:
                     output = output[0]
 

@@ -16,10 +16,11 @@ class HeMIS(nn.Module):
     def __init__(self, growth_rate=32, block_config=(6, 12, 24, 16), merge_at=2,
                  n_views=2, branch_names=None, num_init_features=64, bn_size=4,
                  drop_rate=0, num_classes=15, in_channels=1,
-                 drop_view_prob=0.25, concat=False):
+                 drop_view_prob=0.25, concat=False, test_only_one=None):
 
         super(HeMIS, self).__init__()
 
+        self.test_only_one = test_only_one
         self.branch_names = branch_names
         self.growth_rate = growth_rate
         self.drop_rate = drop_rate
@@ -34,7 +35,7 @@ class HeMIS(nn.Module):
         merged = block_config[merge_at:]
 
         self.branches = nn.ModuleDict()
-        self.drop_view_prob = [1 - drop_view_prob, drop_view_prob/2., drop_view_prob/2.]
+        self.drop_view_prob = [1 - drop_view_prob, drop_view_prob / 2., drop_view_prob / 2.]
         self.concat = concat
 
         for view in range(n_views):
@@ -111,19 +112,21 @@ class HeMIS(nn.Module):
         if self.training:
             # Drop view randomly
             select = np.random.choice([1, 2, 3], p=self.drop_view_prob)
-            if select == 1:  # Both views
-                stats = torch.cat([torch.mean(stacked, dim=1),
-                                   torch.var(stacked, dim=1)], dim=1)
 
-            elif select == 2:  # PA only
-                stats = torch.cat([features[0], torch.zeros_like(features[0])], dim=1)
-
+            if select == 2:  # PA only
+                _to_cat = [features[0], torch.zeros_like(features[0])]
             elif select == 3:  # L only
-                stats = torch.cat([torch.zeros_like(features[1]), features[1]], dim=1)
+                _to_cat = [features[1], torch.zeros_like(features[1])]
+            else:  # Both views
+                _to_cat = [torch.mean(stacked, dim=1), torch.var(stacked, dim=1)]
         else:
-            stats = torch.cat([torch.mean(stacked, dim=1),
-                               torch.var(stacked, dim=1)], dim=1)
+            if self.test_only_one is not None:
+                _ft = features[self.test_only_one]
+                _to_cat = [_ft, torch.zeros_like(_ft)]
+            else:
+                _to_cat = [torch.mean(stacked, dim=1), torch.var(stacked, dim=1)]
 
+        stats = torch.cat(_to_cat, dim=1)
         out = self.combined(stats)
         out = F.relu(out, inplace=True)
         out = F.adaptive_avg_pool2d(out, (1, 1)).view(out.size(0), -1)
@@ -151,7 +154,7 @@ class MultiViewCNN(nn.Module):
         super(MultiViewCNN, self).__init__()
 
         self.multitask = multitask
-        self.drop_view_prob = [1 - drop_view_prob, drop_view_prob/2., drop_view_prob/2.]
+        self.drop_view_prob = [1 - drop_view_prob, drop_view_prob / 2., drop_view_prob / 2.]
         if multitask:
             # Never drop view when multitask
             # Use curriculum learning on loss instead
@@ -170,7 +173,7 @@ class MultiViewCNN(nn.Module):
         self.classifier = nn.Linear(in_features=self.joint_in_features, out_features=num_classes)
 
     def _combine_tensors(self, list_of_features, random_drop=1):
-        if self.join_how == 'mean' and random_drop == 1: # average
+        if self.join_how == 'mean' and random_drop == 1:  # average
             combined = torch.mean(torch.stack(list_of_features, dim=1), dim=1)
         elif self.join_how == 'max' and random_drop == 1:
             combined = torch.max(torch.stack(list_of_features, dim=1), dim=1)[0]
@@ -187,13 +190,13 @@ class MultiViewCNN(nn.Module):
     def forward(self, images):
         # Randomly drop a view while training
         select = np.random.choice([1, 2, 3], p=self.drop_view_prob)
-        if select == 2 and self.training: # Frontal only
+        if select == 2 and self.training:  # Frontal only
             frontal_img = images[0]
             lateral_img = torch.zeros_like(images[1])
-        elif select == 3 and self.training: # Lateral only
+        elif select == 3 and self.training:  # Lateral only
             frontal_img = torch.zeros_like(images[0])
             lateral_img = images[1]
-        else: # Keep both views
+        else:  # Keep both views
             frontal_img, lateral_img = images
 
         frontal_features = self.frontal_model.features(frontal_img)
