@@ -36,12 +36,13 @@ def split_dataset(csvpath: str, output: str, train=0.6, val=0.2, seed=666) -> No
 class PCXRayDataset(Dataset):
     def __init__(self, datadir, csvpath, splitpath, transform=None, max_label_weight=5.,
                  dataset='train', pretrained=False, min_patients_per_label=50,
-                 exclude_labels=["other", "normal", "no finding"], flat_dir=True):
+                 exclude_labels=["other", "normal", "no finding"], flat_dir=True, mode='joint'):
         """
         Data reader. Only selects labels that at least min_patients_per_label patients have.
         """
         super(PCXRayDataset, self).__init__()
 
+        self.mode = mode
         assert dataset in ['train', 'val', 'test']
 
         self.datadir = datadir
@@ -119,9 +120,12 @@ class PCXRayDataset(Dataset):
         pa_path = join(self.datadir, pa_dir, data['ImageID']['PA'])
         pa_img = np.array(Image.open(pa_path))[..., np.newaxis]
 
-        l_dir = str(int(data['ImageDir']['L'])) if not self.flat_dir else ''
-        l_path = join(self.datadir, l_dir, data['ImageID']['L'])
-        l_img = np.array(Image.open(l_path))[..., np.newaxis]
+        if self.mode == 'pa_only':
+            l_img = np.zeros_like(pa_img)
+        else:
+            l_dir = str(int(data['ImageDir']['L'])) if not self.flat_dir else ''
+            l_path = join(self.datadir, l_dir, data['ImageID']['L'])
+            l_img = np.array(Image.open(l_path))[..., np.newaxis]
 
         if self.pretrained:
             pa_img = np.repeat(pa_img, 3, axis=-1)

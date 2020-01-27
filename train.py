@@ -103,6 +103,13 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     trainloader = DataLoader(trainset, **loader_args)
     valloader = DataLoader(valset, **loader_args)
 
+    if misc.use_extended:
+        ext_args = {'datadir': data_dir, 'csvpath': misc.extended_csv, 'splitpath': None,
+                    'max_label_weight': misc.max_label_weight, 'mode': 'pa_only',
+                    'min_patients_per_label': min_patients_per_label, 'flat_dir': misc.flatdir}
+        extset = PCXRayDataset(transform=Compose(train_transfo), **ext_args)
+        extloader = DataLoader(extset, **loader_args)
+
     logger.info(f"Number of patients: {len(trainset)} train, {len(valset)} valid.")
     logger.info(f"Predicting {len(trainset.labels)} labels: \n{trainset.labels}")
     logger.info(trainset.labels_weights)
@@ -205,6 +212,41 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
                 running_loss = torch.zeros(1, requires_grad=False).to(DEVICE)
             del output, images, data
 
+        if misc.use_extended:
+            # Train with only PA images from extended dataset
+            for i, data in enumerate(extloader, 0):
+                if target == 'joint':
+                    *images, label = data['PA'].to(DEVICE), data['L'].to(DEVICE), data['encoded_labels'].to(DEVICE)
+                else:
+                    images, label = data[target.upper()].to(DEVICE), data['encoded_labels'].to(DEVICE)
+
+                # Forward
+                output = model(images)
+                optimizer.zero_grad()
+                if model_type == 'multitask':
+                    # only use PA loss
+                    output = output[1]
+
+                loss = criterion(output, label)
+
+                # Backward
+                loss.backward()
+                optimizer.step()
+
+                # Save predictions
+                train_preds.append(torch.sigmoid(output).detach().cpu().numpy())
+                train_true.append(label.detach().cpu().numpy())
+
+                # print statistics
+                running_loss += loss.detach()
+                print_every = max(1, len(trainset) // (20 * batch_size))
+                if (i + 1) % print_every == 0:
+                    running_loss = running_loss.cpu().detach().numpy().squeeze() / print_every
+                    logger.info('[{0}, {1:5}] Extended dataset loss: {2:.5f}'.format(epoch, i + 1, running_loss))
+                    evaluator.store_dict['train_loss'].append(running_loss)
+                    running_loss = torch.zeros(1, requires_grad=False).to(DEVICE)
+                del output, images, data
+
         train_preds = np.vstack(train_preds)
         train_true = np.vstack(train_true)
 
@@ -270,6 +312,8 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=666)
     parser.add_argument('--threads', type=int, default=1)
     parser.add_argument('--max_label_weight', default=5.0, type=float)
+    parser.add_argument('--use_extended', action='store_true')
+    parser.add_argument('--extended_csv', default=None)
 
     # Data augmentation options
     parser.add_argument('--data-augmentation', type=bool, default=True)
