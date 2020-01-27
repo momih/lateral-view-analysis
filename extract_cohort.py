@@ -1,14 +1,13 @@
 import argparse
-from os.path import join, exists
 import random
-import re, os
+import re
+from os.path import join, exists
 
-import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 from tqdm import tqdm
-
 
 labels_mapping = {
     'calcified granuloma': ['calcified densities', 'granuloma'],

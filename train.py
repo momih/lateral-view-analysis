@@ -102,15 +102,22 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
 
     trainloader = DataLoader(trainset, **loader_args)
     valloader = DataLoader(valset, **loader_args)
+    n_pts = f"{len(trainset)} train,"
 
     if misc.use_extended:
-        ext_args = {'datadir': data_dir, 'csvpath': misc.extended_csv, 'splitpath': None,
-                    'max_label_weight': misc.max_label_weight, 'mode': 'pa_only',
-                    'min_patients_per_label': min_patients_per_label, 'flat_dir': misc.flatdir}
-        extset = PCXRayDataset(transform=Compose(train_transfo), **ext_args)
+        ext_args = dset_args.copy()
+        ext_args['splitpath'] = None
+        ext_args['csvpath'] = misc.csv_path_ext
+
+        extset = PCXRayDataset(transform=Compose(train_transfo), mode='pa_only',
+                               use_labels=trainset.labels, **ext_args)
+        extset.labels_count = trainset.labels_count
+        extset.labels_weights = trainset.labels_weights
         extloader = DataLoader(extset, **loader_args)
 
-    logger.info(f"Number of patients: {len(trainset)} train, {len(valset)} valid.")
+        n_pts += f" {len(extset)} ext_train,"
+
+    logger.info(f"Number of patients: {n_pts} {len(valset)} valid.")
     logger.info(f"Predicting {len(trainset.labels)} labels: \n{trainset.labels}")
     logger.info(trainset.labels_weights)
 
@@ -312,8 +319,8 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=666)
     parser.add_argument('--threads', type=int, default=1)
     parser.add_argument('--max_label_weight', default=5.0, type=float)
-    parser.add_argument('--use_extended', action='store_true')
-    parser.add_argument('--extended_csv', default=None)
+    parser.add_argument('--use-extended', action='store_true')
+    parser.add_argument('--csv_path_ext', default=None)
 
     # Data augmentation options
     parser.add_argument('--data-augmentation', type=bool, default=True)

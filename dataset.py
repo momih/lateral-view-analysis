@@ -36,7 +36,8 @@ def split_dataset(csvpath: str, output: str, train=0.6, val=0.2, seed=666) -> No
 class PCXRayDataset(Dataset):
     def __init__(self, datadir, csvpath, splitpath, transform=None, max_label_weight=5.,
                  dataset='train', pretrained=False, min_patients_per_label=50,
-                 exclude_labels=["other", "normal", "no finding"], flat_dir=True, mode='joint'):
+                 exclude_labels=["other", "normal", "no finding"], flat_dir=True, mode='joint',
+                 use_labels=None):
         """
         Data reader. Only selects labels that at least min_patients_per_label patients have.
         """
@@ -55,7 +56,12 @@ class PCXRayDataset(Dataset):
 
         self.df = pd.read_csv(csvpath)
 
-        self._build_labels()
+        if use_labels is not None:
+            self.labels = use_labels
+        else:
+            self._build_labels()
+
+        self.nb_labels = len(self.labels)
         self.mb = MultiLabelBinarizer(classes=self.labels)
         self.mb.fit(self.labels)
 
@@ -166,7 +172,6 @@ class PCXRayDataset(Dataset):
         self.labels_weights = torch.from_numpy(np.array([(len(self) / label)
                                                          for label in labels_count], dtype=np.float32))
         self.labels_weights = torch.clamp(self.labels_weights * 0.1, 1., self.max_label_weight)
-        self.nb_labels = len(self.labels)
 
 
 class Normalize(object):
