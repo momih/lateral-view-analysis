@@ -61,7 +61,7 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     mlflow.log_param('max_label_weight', misc.max_label_weight)
 
     if model_type == 'hemis':
-        mlflow.log_param('mt-task-prob', misc.drop_view_prob)
+        mlflow.log_param('drop-view-prob', misc.drop_view_prob)
 
     if model_type == 'multitask':
         mlflow.log_param('mt-task-prob', misc.mt_task_prob)
