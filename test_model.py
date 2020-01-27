@@ -34,9 +34,13 @@ def test(data_dir, csv_path, splits_path, output_dir, target='pa',
          model_type='hemis', architecture='densenet121', misc=None):
     assert target in ['pa', 'l', 'joint']
 
+    print(f"\n\nTesting seed {seed}")
     torch.manual_seed(seed)
     np.random.seed(seed)
-    name = output_dir.split("/")[-1].format('')
+    extra = misc.extra
+    name = output_dir.split("/")[-1].format('') + extra
+    output_dir = output_dir.format(seed)
+    splits_path = splits_path.format(seed)
 
     resultsfile = join(output_dir, '..', 'auc-test.csv')
 
@@ -46,8 +50,7 @@ def test(data_dir, csv_path, splits_path, output_dir, target='pa',
     else:
         test_metrics_df = pd.read_csv(resultsfile)
 
-    output_dir = output_dir.format(seed)
-    splits_path = splits_path.format(seed)
+
 
     if not exists(splits_path):
         split_dataset(csv_path, splits_path)
@@ -102,13 +105,14 @@ def test(data_dir, csv_path, splits_path, output_dir, target='pa',
     saveauc = {'auc': per_label_auc, 'prc': per_label_prc, 'meta': row}
 
     if misc.test_only_pa:
+        print("Testing on only PA")
         model.test_only_one = 0
         y_true_pa_only, y_preds_pa_only, _ = get_model_preds(model, dataloader=testloader, target=target,
                                                              test_on='pa', model_type=model_type,
                                                              vote_at_test=misc.vote_at_test, progress_bar=True)
 
         metrics, per_label_auc, per_label_prc = get_metrics(y_true_pa_only, y_preds_pa_only)
-        row = {'expt': name + '_pa_only', 'seed': seed, **metrics}
+        row = {'expt': name + 'pa_only', 'seed': seed, **metrics}
         print(row)
 
         savepreds['y_true_pa_only'] = y_true_pa_only
@@ -123,18 +127,21 @@ def test(data_dir, csv_path, splits_path, output_dir, target='pa',
         saveauc['meta_pa_only'] = row
 
     # Save predictions
-    np.savez(join(output_dir, f'{target}-testpreds'), **savepreds)
-    np.savez(join(output_dir, f'{target}-testauc'), **saveauc)
+    predsdir = join(output_dir, '..', 'test_outs')
+
+    np.savez(join(predsdir, f'preds-{name}{extra}_{seed}-{target}'), **savepreds)
+    np.savez(join(predsdir, f'auc-{name}{extra}_{seed}-{target}'), **saveauc)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Usage')
     # Paths
-    parser.add_argument('data_dir', type=str)
-    parser.add_argument('csv_path', type=str)
-    parser.add_argument('splits_path', type=str)
-    parser.add_argument('output_dir', type=str)
+    parser.add_argument('--data_dir', type=str, required=True)
+    parser.add_argument('--csv_path', type=str, required=True)
+    parser.add_argument('--splits_path', type=str, required=True)
+    parser.add_argument('--output_dir', type=str, required=True)
     parser.add_argument('--exp_name', type=str, default=None)
+    parser.add_argument('--extra', type=str, default='')
 
     # Model params
     parser.add_argument('--arch', type=str, default='densenet121')
@@ -152,7 +159,7 @@ if __name__ == "__main__":
     parser.add_argument('--n_seeds', type=int, default=5)
 
     # Other optional arguments
-    parser.add_argument('--merge', type=int, default=2)
+    parser.add_argument('--merge', type=int, default=3)
     parser.add_argument('--mt-combine-at', dest='combine', type=str, default='prepool')
     parser.add_argument('--mt-join', dest='join', type=str, default='concat')
     parser.add_argument('--drop-view-prob', type=float, default=0.0,
@@ -163,7 +170,7 @@ if __name__ == "__main__":
     if args.exp_name:
         args.output_dir = args.output_dir + "-" + args.exp_name
     print(args)
-    for _seed in range(args.n_seeds):
+    for _seed in range(1, args.n_seeds + 1):
         test(args.data_dir, args.csv_path, args.splits_path, args.output_dir, target=args.target,
              batch_size=args.batch_size, pretrained=args.pretrained,
              min_patients_per_label=args.min_patients, seed=_seed,
