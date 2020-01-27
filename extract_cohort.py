@@ -1,7 +1,7 @@
 import argparse
 from os.path import join, exists
 import random
-import re
+import re, os
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
@@ -113,7 +113,7 @@ cxr_labels = ['pneumonia', 'pleural effusion', 'consolidation', 'normal', 'cardi
               'pneumothorax', 'pulmonary edema', 'pleural thickening', 'nodule', 'pulmonary fibrosis']
 
 
-def correct_image_dir(input_csv, output_csv, datadir):
+def correct_image_dir(input_csv, output_csv, datadir, use_imagedir=False):
     df = pd.read_csv(input_csv, low_memory=False)
     print(f"{len(df)} images in dataset.")
 
@@ -143,15 +143,17 @@ def correct_image_dir(input_csv, output_csv, datadir):
     df.to_csv(output_csv, index=False)
 
 
-def get_cohort(input_csv, output_csv, datadir, broken_images_file=None, mode='joint'):
+def get_cohort(input_csv, output_csv, datadir, broken_images_file=None,
+               mode='joint', correct=False):
     tqdm.pandas()
     random.seed(9999)
 
-    correct_image_dir(input_csv, output_csv, datadir)
+    if correct:
+        correct_image_dir(input_csv, output_csv, datadir)
 
     usecols = ['ImageID', 'ImageDir', 'StudyDate_DICOM', 'StudyID', 'PatientID',
                'Projection', 'Pediatric', 'Rows_DICOM', 'Columns_DICOM', 'Labels']
-    df = pd.read_csv(output_csv, usecols=usecols, low_memory=False)
+    df = pd.read_csv(input_csv, usecols=usecols, low_memory=False)
 
     # Some pngs can't be read, we should remove them
     if broken_images_file is not None:
@@ -248,6 +250,8 @@ def get_cohort(input_csv, output_csv, datadir, broken_images_file=None, mode='jo
         check_study_image = (len(df.StudyID.unique()) * 2 == len(df))
         print(f"Check if there is are exactly two images per patient: {check_study_image}")
 
+    return df
+
 
 def labels_distribution(cohort):
     tqdm.pandas()
@@ -308,14 +312,24 @@ def labels_distribution(cohort):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Usage')
-    parser.add_argument('input_csv', type=str)
-    parser.add_argument('output_csv', type=str)
-    parser.add_argument('datadir', type=str)
-    parser.add_argument('-b', type=str, default=None)
-    parser.add_argument('--mode', type=str, default="joint")
+    parser.add_argument('--input_csv', required=True)
+    parser.add_argument('--output_csv', required=True)
+    parser.add_argument('--datadir', required=True)
+    parser.add_argument('--broken-file', default=None)
+    parser.add_argument('--mode', default="joint")
+    parser.add_argument('--joint-csv', default=None)
+    parser.add_argument('--correct', action='store_true')
     args = parser.parse_args()
 
     mode = args.mode
 
-    get_cohort(args.input_csv, args.output_csv, args.datadir, args.b, mode)
+    df = get_cohort(args.input_csv, args.output_csv, args.datadir,
+                    args.broken_file, args.mode, args.correct)
     # labels_distribution(cohort_file)
+
+    if args.mode == 'pa' and args.joint_csv is not None:
+        # Remove common patients
+        joint_df = pd.read_csv(args.joint_csv)
+        diff_pt_ids = set(df.PatientID).difference(joint_df.PatientID)
+        df = df.loc[df.PatientID.isin(diff_pt_ids)]
+        df.to_csv(args.output_csv, index=False)

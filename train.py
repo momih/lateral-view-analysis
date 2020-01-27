@@ -240,10 +240,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Usage')
 
     # Paths
-    parser.add_argument('data_dir', type=str)
-    parser.add_argument('csv_path', type=str)
-    parser.add_argument('splits_path', type=str)
-    parser.add_argument('output_dir', type=str)
+    parser.add_argument('--data_dir', type=str, required=True)
+    parser.add_argument('--csv_path', type=str, required=True)
+    parser.add_argument('--splits_path', type=str, required=True)
+    parser.add_argument('--output_dir', type=str, required=True)
     parser.add_argument('--log', type=str, default=None)
     parser.add_argument('--exp_name', type=str, default=None)
 
