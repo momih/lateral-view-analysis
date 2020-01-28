@@ -133,11 +133,11 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     # Resume training if possible
     latest_ckpt_file = join(output_dir, f'{target}-latest.tar')
     if isfile(latest_ckpt_file):
-        with torch.load(latest_ckpt_file) as checkpoint:
-            model.load_state_dict(checkpoint['model_state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-
+        checkpoint = torch.load(latest_ckpt_file)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        del checkpoint
         evaluator.load_saved()
         start_epoch = int(evaluator.eval_df.epoch.iloc[-1])
         logger.info(f"Resumed at epoch {start_epoch}")

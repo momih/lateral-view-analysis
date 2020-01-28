@@ -131,7 +131,14 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
 
     criterion = nn.BCEWithLogitsLoss(pos_weight=trainset.labels_weights.to(DEVICE))
     loss_weights = [1.0] + list(misc.loss_weights)
-    task_prob = [1 - misc.mt_task_prob, misc.mt_task_prob / 2., misc.mt_task_prob / 2.]
+
+    if len(misc.mt_task_prob) == 1:
+        _mt_task_prob = misc.mt_task_prob[0]
+        task_prob = [1 - _mt_task_prob, _mt_task_prob / 2., _mt_task_prob / 2.]
+    else:
+        _pa_prob, _l_prob = misc.mt_task_prob
+        _jt_prob = 1 - (_pa_prob + _l_prob)
+        task_prob = [_jt_prob, _pa_prob, _l_prob]
 
     if model_type in ['singletask', 'multitask', 'dualnet'] and len(lr) > 1:
         # each branch has custom learning rate
@@ -154,10 +161,11 @@ def train(data_dir, csv_path, splits_path, output_dir, target='pa', nb_epoch=100
     # Resume training if possible
     latest_ckpt_file = join(output_dir, f'{target}-latest.tar')
     if isfile(latest_ckpt_file):
-        with torch.load(latest_ckpt_file) as checkpoint:
-            model.load_state_dict(checkpoint['model_state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        checkpoint = torch.load(latest_ckpt_file)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        del checkpoint
 
         evaluator.load_saved()
         start_epoch = int(evaluator.eval_df.epoch.iloc[-1])
@@ -335,9 +343,9 @@ if __name__ == "__main__":
     parser.add_argument('--drop-view-prob', type=float, default=0.0,
                         help='For joint. Drop either view with p/2 and keep both views with 1-p. '
                              'Disabled for multitask')
-    parser.add_argument('--mt-task-prob', type=float, default=0.0,
-                        help='Curriculum learning probs for multitask. '
-                             'Drop either task with p/2 and keep both views with 1-p')
+    parser.add_argument('--mt-task-prob', type=float, default=[0.0], nargs='*',
+                        help='Curriculum learning probs for multitask. For PA and L resp'
+                             'If only one arg, then drop either task with p/2 and keep both views with 1-p')
     parser.add_argument('--mt-combine-at', dest='combine', type=str, default='prepool',
                         help='For Multitask. Combine both views before or after pooling')
     parser.add_argument('--mt-join', dest='join', type=str, default='concat',
