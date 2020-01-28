@@ -48,7 +48,7 @@ SEED=666
 # orion -v hunt -n lateral-view-pa --config orion_config.yaml ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name {trial.id} --seed $SEED --epochs $EPOCHS --model-type 'dualnet' --arch 'resnet152' --target 'pa' --batch_size 8 --learning_rate 'orion~loguniform(1e-5, 1e-3, shape=(1,))' --dropout 'orion~uniform(0, 5, discrete=True)' --optim 'adam' --log '{exp.working_dir}/{exp.name}_{trial.id}/exp.log'
 
 # L DenseNet121
-orion -v hunt -n lateral-view-l4 --config orion_config.yaml ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name {trial.id} --seed $SEED --epochs $EPOCHS --model-type 'dualnet' --target 'l' --batch_size 8 --learning_rate 'orion~loguniform(1e-5, 1e-3, shape=(1,))' --dropout 'orion~uniform(0, 5, discrete=True)' --optim 'adam' --log '{exp.working_dir}/{exp.name}_{trial.id}/exp.log'
+# orion -v hunt -n lateral-view-l4 --config orion_config.yaml ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name {trial.id} --seed $SEED --epochs $EPOCHS --model-type 'dualnet' --target 'l' --batch_size 8 --learning_rate 'orion~loguniform(1e-5, 1e-3, shape=(1,))' --dropout 'orion~uniform(0, 5, discrete=True)' --optim 'adam' --log '{exp.working_dir}/{exp.name}_{trial.id}/exp.log'
 
 # Stacked
 # orion -v hunt -n lateral-view-stacked --config orion_config.yaml ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name {trial.id} --seed $SEED --epochs $EPOCHS --model-type 'stacked' --target 'joint' --batch_size 8 --learning_rate 'orion~loguniform(1e-5, 1e-3, shape=3)' --dropout 'orion~uniform(0, 5, discrete=True)' --optim 'adam' --log '{exp.working_dir}/{exp.name}_{trial.id}/exp.log'
@@ -59,10 +59,10 @@ orion -v hunt -n lateral-view-l4 --config orion_config.yaml ./hyperparam_search.
 # Hemis CL
 # orion -v hunt -n lateral-view-hemis3 --config orion_config.yaml ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name {trial.id} --seed $SEED --epochs $EPOCHS --model-type 'hemis' --target 'joint' --batch_size 8 --learning_rate 'orion~loguniform(1e-5, 1e-3, shape=3)' --dropout 'orion~uniform(0, 5, discrete=True)' --optim 'adam' --drop-view-prob 'orion~choices([0.1, 0.2, 0.3, 0.4, 0.5, 0.6])' --log '{exp.working_dir}/{exp.name}_{trial.id}/exp.log'
 
-# Joint DualNet
-# orion -v hunt -n lateral-view-dualnet --config orion_config.yaml ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name {trial.id} --seed $SEED --epochs $EPOCHS --model-type 'dualnet' --target 'joint' --batch_size 8 --learning_rate 'orion~loguniform(1e-5, 1e-3, shape=3)' --dropout 'orion~uniform(0, 5, discrete=True)' --optim 'adam' --log '{exp.working_dir}/{exp.name}_{trial.id}/exp.log'
+# DualNet
+orion -v hunt -n lateral-view-dualnet2 --config orion_config.yaml ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name {trial.id} --seed $SEED --epochs $EPOCHS --model-type 'dualnet' --target 'joint' --batch_size 8 --learning_rate 'orion~loguniform(1e-5, 1e-3, shape=3)' --dropout 'orion~uniform(0, 5, discrete=True)' --optim 'adam' --log '{exp.working_dir}/{exp.name}_{trial.id}/exp.log'
 
-# Joint Multitask
+# Multitask
 # orion -v hunt -n lateral-view-multitask --config orion_config.yaml ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name {trial.id} --seed $SEED --epochs $EPOCHS --model-type 'multitask' --target 'joint' --batch_size 8 --learning_rate 'orion~loguniform(1e-5, 1e-3, shape=3)' --dropout 'orion~uniform(0, 5, discrete=True)' --optim 'adam' --mt-task-prob 'orion~choices([0.0, 0.1, 0.2, 0.3, 0.4, 0.5])' --mt-join "orion~choices(['concat', 'max', 'mean'])" --log '{exp.working_dir}/{exp.name}_{trial.id}/exp.log'
 
 # 4. Copy whatever you want to save on $SCRATCH
