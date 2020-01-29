@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --account=rpp-bengioy
 #SBATCH --cpus-per-task=2
-#SBATCH --array=1-25%5
+#SBATCH --array=1-35%5
 #SBATCH --gres=gpu:1
 #SBATCH --mem=32G
 #SBATCH --time=10:00:00
@@ -60,10 +60,13 @@ SEED=666
 # orion -v hunt -n lateral-view-hemis3 --config orion_config.yaml ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name {trial.id} --seed $SEED --epochs $EPOCHS --model-type 'hemis' --target 'joint' --batch_size 8 --learning_rate 'orion~loguniform(1e-5, 1e-3, shape=3)' --dropout 'orion~uniform(0, 5, discrete=True)' --optim 'adam' --drop-view-prob 'orion~choices([0.1, 0.2, 0.3, 0.4, 0.5, 0.6])' --log '{exp.working_dir}/{exp.name}_{trial.id}/exp.log'
 
 # DualNet
-orion -v hunt -n lateral-view-dualnet2 --config orion_config.yaml ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name {trial.id} --seed $SEED --epochs $EPOCHS --model-type 'dualnet' --target 'joint' --batch_size 8 --learning_rate 'orion~loguniform(1e-5, 1e-3, shape=3)' --dropout 'orion~uniform(0, 5, discrete=True)' --optim 'adam' --log '{exp.working_dir}/{exp.name}_{trial.id}/exp.log'
+# orion -v hunt -n lateral-view-dualnet2 --config orion_config.yaml ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name {trial.id} --seed $SEED --epochs $EPOCHS --model-type 'dualnet' --target 'joint' --batch_size 8 --learning_rate 'orion~loguniform(1e-5, 1e-3, shape=3)' --dropout 'orion~uniform(0, 5, discrete=True)' --optim 'adam' --log '{exp.working_dir}/{exp.name}_{trial.id}/exp.log'
 
 # Multitask
-# orion -v hunt -n lateral-view-multitask --config orion_config.yaml ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name {trial.id} --seed $SEED --epochs $EPOCHS --model-type 'multitask' --target 'joint' --batch_size 8 --learning_rate 'orion~loguniform(1e-5, 1e-3, shape=3)' --dropout 'orion~uniform(0, 5, discrete=True)' --optim 'adam' --mt-task-prob 'orion~choices([0.0, 0.1, 0.2, 0.3, 0.4, 0.5])' --mt-join "orion~choices(['concat', 'max', 'mean'])" --log '{exp.working_dir}/{exp.name}_{trial.id}/exp.log'
+orion -v hunt -n lateral-view-multitask3 --config orion_config.yaml ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name {trial.id} --seed $SEED --epochs $EPOCHS --model-type 'multitask' --target 'joint' --batch_size 8 --learning_rate 'orion~loguniform(1e-5, 1e-3, shape=3)' --dropout 'orion~uniform(0, 5, discrete=True)' --optim 'adam' --mt-task-prob 0.0 --mt-join "orion~choices(['concat', 'max', 'mean'])" --log '{exp.working_dir}/{exp.name}_{trial.id}/exp.log'
+
+# Multitask CL
+# orion -v hunt -n lateral-view-multitask --config orion_config.yaml ./hyperparam_search.py --data_dir $DATADIRVAR --csv_path $CSV --splits_path $SPLIT --output_dir $OUTPUT --exp_name {trial.id} --seed $SEED --epochs $EPOCHS --model-type 'multitask' --target 'joint' --batch_size 8 --learning_rate 'orion~loguniform(1e-5, 1e-3, shape=3)' --dropout 'orion~uniform(0, 5, discrete=True)' --optim 'adam' --mt-task-prob 'orion~choices([0.1, 0.2, 0.3, 0.4, 0.5, 0.6])' --mt-join "orion~choices(['concat', 'max', 'mean'])" --log '{exp.working_dir}/{exp.name}_{trial.id}/exp.log'
 
 # 4. Copy whatever you want to save on $SCRATCH
 # rsync -avz $SLURM_TMPDIR/<to_save> /network/tmp1/<user>/
