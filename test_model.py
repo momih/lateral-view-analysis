@@ -42,20 +42,33 @@ def test(data_dir, csv_path, splits_path, output_dir, target='pa',
     output_dir = output_dir.format(seed)
     splits_path = splits_path.format(seed)
 
-    # Save predictions
-    predsdir = join(output_dir, '..', 'test_outs')
-    resultsfile = join(output_dir, '..', 'auc-test.csv')
+    if not exists(splits_path):
+        split_dataset(csv_path, splits_path)
 
+    resultsfile = join(output_dir, '..', 'auc-test.csv')
     if not isfile(resultsfile):
         columns = ['expt', 'seed', 'accuracy', 'auc', 'auc_weighted', 'prc', 'prc_weighted']
         test_metrics_df = pd.DataFrame(columns=columns)
     else:
         test_metrics_df = pd.read_csv(resultsfile)
 
+    # Save predictions
+    savepreds = {}
+    saveauc = {}
 
+    predsdir = join(output_dir, '..', 'test_outs')
+    predsfile = join(predsdir, f'preds-{name}{extra}_{seed}-{target}')
+    aucfile = join(predsdir, f'auc-{name}{extra}_{seed}-{target}')
 
-    if not exists(splits_path):
-        split_dataset(csv_path, splits_path)
+    if isfile(predsfile):
+        print(f'Loading {predsfile}')
+        _arr = np.load(predsfile, allow_pickle=True)
+        savepreds = {k: _arr[k] for k in _arr.keys()}
+
+    if isfile(aucfile):
+        print(f'Loading {aucfile}')
+        _arr = np.load(aucfile, allow_pickle=True)
+        saveauc = {k: _arr[k] for k in _arr.keys()}
 
     print("Test mode: {}".format(target))
     print('Device that will be used is: {0}'.format(DEVICE))
@@ -94,50 +107,46 @@ def test(data_dir, csv_path, splits_path, output_dir, target='pa',
     model.to(DEVICE)
     model.eval()
 
-    if misc.test_multi:
-        y_true, y_preds, _ = get_model_preds(model, dataloader=testloader, target=target, model_type=model_type,
-                                             vote_at_test=misc.vote_at_test, progress_bar=True)
-        metrics, per_label_auc, per_label_prc = get_metrics(y_true, y_preds)
-        row = {'expt': name, 'seed': seed, **metrics}
-        print(row)
+    # if misc.test_multi:
+    #     y_true, y_preds, _ = get_model_preds(model, dataloader=testloader, target=target, model_type=model_type,
+    #                                          vote_at_test=misc.vote_at_test, progress_bar=True)
+    #     metrics, per_label_auc, per_label_prc = get_metrics(y_true, y_preds)
+    #     row = {'expt': name, 'seed': seed, **metrics}
+    #     print(row)
+    #
+    #     test_metrics_df = test_metrics_df.append(row, ignore_index=True)
+    #     test_metrics_df.to_csv(resultsfile, index=False)
+    #
+    #     savepreds = {'y_true': y_true, 'y_preds': y_preds, 'meta': row}
+    #     saveauc = {'auc': per_label_auc, 'prc': per_label_prc, 'meta': row}
 
-        test_metrics_df = test_metrics_df.append(row, ignore_index=True)
-        test_metrics_df.to_csv(resultsfile, index=False)
-
-        savepreds = {'y_true': y_true, 'y_preds': y_preds, 'meta': row}
-        saveauc = {'auc': per_label_auc, 'prc': per_label_prc, 'meta': row}
-
-    else:
-        print('Loading save files')
-        _arr = np.load(join(predsdir, f'preds-{name}{extra}_{seed}-{target}'), allow_pickle=True)
-        savepreds = {k: _arr[k] for k in _arr.keys()}
-
-        _arr = np.load(join(predsdir, f'auc-{name}{extra}_{seed}-{target}'), allow_pickle=True)
-        saveauc = {k: _arr[k] for k in _arr.keys()}
-
-    for view in misc.test_single:
+    for view in misc.test_on:
         print(f"Testing on only {view}")
-        model.test_only_one = 0
-        y_true_pa_only, y_preds_pa_only, _ = get_model_preds(model, dataloader=testloader, target=target,
-                                                             test_on=view, model_type=model_type,
-                                                             vote_at_test=misc.vote_at_test, progress_bar=True)
+        if view == 'pa':
+            model.test_only_one = 0
+        elif view == 'l':
+            model.test_only_one = 1
+        else:
+            model.test_only_one = None
 
-        metrics, per_label_auc, per_label_prc = get_metrics(y_true_pa_only, y_preds_pa_only)
-        row = {'expt': name + f'{view}_only', 'seed': seed, **metrics}
+        y_true, y_preds, _ = get_model_preds(model, dataloader=testloader, target=target,
+                                             test_on=view, model_type=model_type,
+                                             vote_at_test=misc.vote_at_test, progress_bar=True)
+
+        metrics, per_label_auc, per_label_prc = get_metrics(y_true, y_preds)
+        row = {'expt': name + f'{view}_view', 'seed': seed, **metrics}
         print(row)
 
-        savepreds[f'y_true_{view}_only'] = y_true_pa_only
-        savepreds[f'y_preds_{view}_only'] = y_preds_pa_only
-        savepreds[f'meta_{view}_only'] = row
-
         test_metrics_df = test_metrics_df.append(row, ignore_index=True)
-        test_metrics_df.to_csv(resultsfile, index=False)
 
-        saveauc[f'auc_{view}_only'] = per_label_auc
-        saveauc[f'prc_{view}_only'] = per_label_prc
-        saveauc[f'meta_{view}_only'] = row
+        savepreds[f'y_true_{view}_view'] = y_true
+        savepreds[f'y_preds_{view}_view'] = y_preds
+        savepreds[f'meta_{view}_view'] = row
+        saveauc[f'auc_{view}_view'] = per_label_auc
+        saveauc[f'prc_{view}_view'] = per_label_prc
+        saveauc[f'meta_{view}_view'] = row
 
-
+    test_metrics_df.to_csv(resultsfile, index=False)
     np.savez(join(predsdir, f'preds-{name}{extra}_{seed}-{target}'), **savepreds)
     np.savez(join(predsdir, f'auc-{name}{extra}_{seed}-{target}'), **saveauc)
 
@@ -157,8 +166,7 @@ if __name__ == "__main__":
     parser.add_argument('--model-type', type=str, default='hemis')
     parser.add_argument('--pretrained', action='store_true')
     parser.add_argument('--vote-at-test', action='store_true')
-    parser.add_argument('--test-multi', action='store_true')
-    parser.add_argument('--test-single', default=['pa', 'l'], nargs='*')
+    parser.add_argument('--test-on', default=['pa', 'l'], nargs='*')
 
     # Hyperparams
     parser.add_argument('--batch_size', type=int, default=1)
