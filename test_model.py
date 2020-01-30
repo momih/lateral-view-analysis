@@ -57,8 +57,8 @@ def test(data_dir, csv_path, splits_path, output_dir, target='pa',
     saveauc = {}
 
     predsdir = join(output_dir, '..', 'test_outs')
-    predsfile = join(predsdir, f'preds-{name}{extra}_{seed}-{target}')
-    aucfile = join(predsdir, f'auc-{name}{extra}_{seed}-{target}')
+    predsfile = join(predsdir, f'preds-{name}{extra}_{seed}-{target}.npz')
+    aucfile = join(predsdir, f'auc-{name}{extra}_{seed}-{target}.npz')
 
     if isfile(predsfile):
         print(f'Loading {predsfile}')
