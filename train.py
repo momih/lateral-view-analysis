@@ -343,7 +343,7 @@ if __name__ == "__main__":
     parser.add_argument('--drop-view-prob', type=float, default=0.0,
                         help='For joint. Drop either view with p/2 and keep both views with 1-p. '
                              'Disabled for multitask')
-    parser.add_argument('--mt-task-prob', type=float, default=[0.0], nargs='*',
+    parser.add_argument('--mt-task-prob', type=float, default=[0.0, 0.5], nargs='*',
                         help='Curriculum learning probs for multitask. For PA and L resp'
                              'If only one arg, then drop either task with p/2 and keep both views with 1-p')
     parser.add_argument('--mt-combine-at', dest='combine', type=str, default='prepool',
