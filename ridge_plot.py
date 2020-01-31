@@ -38,20 +38,22 @@ def parse_args(args):
 def make_ridge_plot(mlruns_dir):
     all_exp_dirs = glob.glob(os.path.join(mlruns_dir, '*'))
 
-    order = {'l': 0,
-             'pa-121': 1,
-             'pa-201': 2,
-             'stacked': 3,
-             'hemis': 4,
-             'hemis-cl': 5,
-             'dualnet': 6,
-             'multitask': 7,
-             'multitask-cl': 8}
+    order = {
+        # 'l': 0,
+        # 'pa-121': 1,
+        # 'pa-201': 2,
+        'stacked': 3,
+        'hemis': 5,
+        'hemis-cl': 6,
+        'dualnet': 4,
+        'multitask': 7,
+        'multitask-cl': 8
+    }
 
     results = {
-        'l': [],
-        'pa-121': [],
-        'pa-201': [],
+        # 'l': [],
+        # 'pa-121': [],
+        # 'pa-201': [],
         'stacked': [],
         'hemis': [],
         'hemis-cl': [],
@@ -94,12 +96,13 @@ def make_ridge_plot(mlruns_dir):
             max_auc = auc[:, 1].max()
             exp_name = meta['name'][13:]
 
-            if exp_name == 'pa':
+            if exp_name in ['pa', 'l']:
+                continue
                 # Sort by architecture
-                if run_name.startswith('densenet'):
-                    exp_name = f'{exp_name}-{run_name[8:11]}'
-                else:
-                    continue
+                # if run_name.startswith('densenet'):
+                #     exp_name = f'{exp_name}-{run_name[8:11]}'
+                # else:
+                #     continue
             elif exp_name == 'hemis':
                 # Sort by date
                 with open(os.path.join(current_exp_dir, 'meta.yaml'), 'r') as f:
@@ -120,10 +123,29 @@ def make_ridge_plot(mlruns_dir):
                 if task_prob != '0.0':
                     exp_name = f'{exp_name}-cl'
 
+            # We stop at 40 per model
+            if len(results[exp_name]) >= 40:
+                continue
+
             results[exp_name].append(max_auc)
             exp_res.append(exp_name)
             value_res.append(max_auc)
             order_res.append(order[exp_name])
+
+    # Capitalize names
+    for i in range(len(exp_res)):
+        if exp_res[i] == 'stacked':
+            exp_res[i] = 'Stacked'
+        elif exp_res[i] == 'dualnet':
+            exp_res[i] = 'DualNet'
+        elif exp_res[i] == 'hemis':
+            exp_res[i] = 'HeMIS'
+        elif exp_res[i] == 'hemis-cl':
+            exp_res[i] = 'HeMIS CL'
+        elif exp_res[i] == 'multitask':
+            exp_res[i] = 'AuxLoss'
+        elif exp_res[i] == 'multitask-cl':
+            exp_res[i] = 'AuxLoss CL'
 
     for k, v in results.items():
         print(k, len(v), np.mean(v), np.std(v))
@@ -134,8 +156,8 @@ def make_ridge_plot(mlruns_dir):
     # Plotting
     sns.set(style="white", rc={"axes.facecolor": (0, 0, 0, 0)})
 
-    pal = sns.cubehelix_palette(10, rot=-.25, light=.7)
-    g = sns.FacetGrid(df, row="g", hue="g", aspect=15, height=.5, palette=pal)
+    pal = sns.cubehelix_palette(len(order), rot=-.25, light=.5)
+    g = sns.FacetGrid(df, row="g", hue='g', aspect=15, height=.5, palette=pal)
 
     g.map(sns.kdeplot, "AUC", clip_on=False, shade=True, alpha=1, lw=1.5, bw=.002)
     g.map(sns.kdeplot, "AUC", clip_on=False, color="w", lw=2, bw=.002)
@@ -155,6 +177,7 @@ def make_ridge_plot(mlruns_dir):
     g.despine(bottom=True, left=True)
 
     plt.show()
+    g.savefig('hyperopt_ridge.pdf')
 
 
 if __name__ == "__main__":
