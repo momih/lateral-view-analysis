@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class _DenseLayer(nn.Sequential):
     def __init__(self, num_input_features, growth_rate, bn_size, drop_rate):
         super(_DenseLayer, self).__init__()
@@ -106,6 +107,7 @@ class DenseNet(nn.Module):
         out = self.classifier(out)
         return out
 
+
 def get_densenet_params(arch):
     assert 'dense' in arch
     if arch == 'densenet161':
@@ -118,6 +120,3 @@ def get_densenet_params(arch):
         # default configuration: densenet121
         ret = dict(growth_rate=32, block_config=(6, 12, 24, 16), num_init_features=64)
     return ret
-
-if __name__ == "__main__":
-    pass

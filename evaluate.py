@@ -38,8 +38,8 @@ class ModelEvaluator:
             self.logger.info('Error in calculating train AUC')
             train_auc = np.zeros_like(val_auc)
 
-        diff_train_val = val_auc - train_auc
-        diff_train_val = np.stack([val_auc, train_auc, diff_train_val], axis=-1)
+        # diff_train_val = val_auc - train_auc
+        # diff_train_val = np.stack([val_auc, train_auc, diff_train_val], axis=-1)
         # self.logger.info(diff_train_val.round(4))
 
         self.store_dict['val_prc'].append(val_prc)

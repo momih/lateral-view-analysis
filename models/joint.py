@@ -3,7 +3,7 @@ from collections import OrderedDict
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn.functional as F  # noqa
 
 from models.densenet import DenseNet, _DenseBlock, _Transition, get_densenet_params
 
